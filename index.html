@@ -7,11 +7,11 @@
     <style>
       @font-face {
         font-family: "Gloock";
-        src: url("../Gloock-Regular.ttf");
+        src: url("./Gloock-Regular.ttf");
       }
       @font-face {
         font-family: "Inter";
-        src: url("../Inter.ttf");
+        src: url("./Inter.ttf");
       }
       @font-face {
         font-family: "Lato";
@@ -45,6 +45,7 @@
         will-change: text-shadow;
         will-change: font-size;
         will-change: line-height;
+        border-bottom: 2px dashed gray;
       }
       #title-cont {
         width: 100%;
@@ -61,15 +62,14 @@
       #kenneth span,
       #line-two span {
         display: inline-block;
+        /*transition: text-shadow 0.05s, font-size 0.05s, line-height 0.05s;*/
+        line-height: normal;
       }
+
       .main span p {
         padding-bottom: 10px;
         display: inline;
-      } /*
-      .main span:hover {
-        font-size: clamp(120px, 15vw, 300px);
-        line-height: 1.2em;
-      }*/
+      }
       #line-two {
         margin-left: 10%;
         padding-top: 0;
@@ -88,22 +88,17 @@
         text-shadow: 2px 2px 1px gray;
       }
       #break {
-        background-image: url("images/costume1-5.svg");
-        background-color: red;
+        background-color: rgb(8, 244, 43);
       }
-      /*    #kenneth span,
-      #line-two span {
-      }*/
     </style>
   </head>
   <body>
-    <header>
+    <!--   <header>
       <a>About me</a>
       <a>Why I code</a>
       <a>Kennethtrancoding</a>
-      <a>Badges</a>
       <a>Settings</a>
-    </header>
+    </header>-->
     <div id="title-cont-cont">
       <div id="title-cont">
         <span
@@ -122,20 +117,21 @@
         <span id="line-two-cont">
           <div class="main" id="line-two">trancoding</div></span
         >
-        <h2 id="subtext">Welcome to my website!</h2>
+        <h2 id="subtext">Welcome to my corner of the web!</h2>
       </div>
     </div>
-    <div class="break" style="height: 200px"><p>break</p></div>
-    <p>hello</p>
+    <div class="break" style="height: 100px"><p>break</p></div>
+
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/particlesjs/2.2.2/particles.min.js"></script>
     <script>
       //Variables
       let hoverAnimationEnabled = true;
       let autoSpan = "";
-      // Auto span title
+      // Makes each character in Kennethtrancoding an individual span
+
       for (let letter of $("#kenneth").text().split("")) {
-        autoSpan += `<span><p>${letter}</p></span>`;
+        autoSpan += `<span data-original="${letter}"><p>${letter}</p></span>`;
       }
       $("#kenneth").html(autoSpan);
 
@@ -146,7 +142,7 @@
       autoSpan = "";
 
       for (let letter of $("#line-two").text().split("")) {
-        autoSpan += `<span><p>${letter}</p></span>`;
+        autoSpan += `<span data-original="${letter}"><p>${letter}</p></span>`;
       }
       $("#line-two").html(autoSpan);
 
@@ -156,13 +152,12 @@
           $(window).width() - $(this).offset().left
         );
       });
-
-      //Redacted, randint
+      //Glitch characters, randint
 
       function randint(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
       }
-      /*  const glitchCharacters = [
+      const glitchCharacters = [
         "a",
         "b",
         "c",
@@ -199,45 +194,15 @@
         "8",
         "9",
         "0",
-        "!",
-        "@",
-        "#",
-        "$",
-        "%",
-        "^",
-        "&",
-        "*",
-        "(",
-        ")",
-        "_",
-        "+",
-        "-",
-        "=",
-        "<",
-        ">",
-        "?",
-        ":",
-        "",
-        "{",
-        "}",
-        ",",
-        ".",
-        "/",
-        ";",
-        "'",
-        "[",
-        "]",
-        "\\",
-        "~",
-        "`",
+        "𓅱",
       ];
-      function redact(item) {
+      function glitch(item) {
         item.text(glitchCharacters[randint(0, glitchCharacters.length - 1)]);
-      }*/
+      }
       //Mouse-over title
+      let glitchInterval = null;
 
       $("#kenneth span, #line-two span").on("mouseover", function () {
-        //$(this).text(" " + $(this).text() + " ");
         if (hoverAnimationEnabled) {
           let selected = $(this);
           $(this)
@@ -255,18 +220,30 @@
                     13 + 15 / 3 ** Math.abs($(this).index() - selected.index())
                   ) +
                   "vw, 20vw)",
-                "line-height": "0.1ch",
+                "line-height": "0.1ex",
               });
             });
+
+          // Clear any existing interval to prevent duplicates
+          if (glitchInterval !== null) {
+            clearInterval(glitchInterval);
+          }
+
+          // Start a new interval
+          glitchInterval = setInterval(function () {
+            glitch(selected);
+          }, 100);
         }
-        /* redactInterval = setInterval(function () {
-                              redact(selected);
-                            }, 100);*/
       });
-      /*  $("#kenneth span, #line-two span").on("mouseout", function () {
-                            clearInterval(redactInterval);
-                            redactInterval = null;
-                          });*/
+
+      $("#kenneth span, #line-two span").on("mouseout", function () {
+        // Clear interval when mouse leaves
+        if (glitchInterval !== null) {
+          clearInterval(glitchInterval);
+          glitchInterval = null;
+          $(this).text($(this).attr("data-original"));
+        }
+      });
       $("#kenneth, #line-two").on("mouseout", function () {
         $(this)
           .children()
@@ -274,17 +251,20 @@
             $(this).css({
               "font-size": "",
               "text-shadow": "",
-              "line-height": "",
+              "line-height": "normal",
               transform: "",
             });
           });
-        // clearInterval(redactInterval);
       });
 
       const scrollThreshold = 60;
+      hoverAnimationEnabled = scrollY <= scrollThreshold;
       $(window).on("scroll", function () {
+        hoverAnimationEnabled = scrollY <= scrollThreshold;
         if (scrollY > scrollThreshold) hoverAnimationEnabled = false;
         else hoverAnimationEnabled = true;
+
+        // Translate the elements based on scroll position
         $("#kenneth").css({
           transform:
             scrollY < scrollThreshold
@@ -297,35 +277,88 @@
               ? "translate(0, 0)"
               : "translate(" + (scrollY - scrollThreshold) + "px, 0)",
         });
-        const opacityThreshold = 700;
+
+        const opacityStart = 0; // When scrolling starts
+        const opacityFadeStart = 200; // Fully opaque
+        const opacityFadeEnd = 700; // Fully faded
+        const opacityEnd = 700; // Maximum scroll to fully fade
+
+        // Opacity calculation for #kenneth span
         $("#kenneth span").each(function () {
           const originalLeft = $(this).data("to-left");
           const currentLeft = $(this).offset().left;
           const distanceMoved = Math.abs(currentLeft - originalLeft);
 
-          // Calculate opacity: full opacity at original position, 0 opacity when moved by opacityThreshold
-          const opacity = Math.max(0, 1 - distanceMoved / opacityThreshold);
+          // Calculate opacity between 0 and 200 px fully opaque, then fading from 200px to 350px
+          let opacity = 1;
+          if (scrollY > opacityFadeStart && scrollY <= opacityFadeEnd) {
+            opacity = Math.max(
+              0,
+              1 -
+                (scrollY - opacityFadeStart) /
+                  (opacityFadeEnd - opacityFadeStart)
+            );
+          }
+
           $(this).css({ opacity: opacity });
         });
 
-        // Opacity handling for #line-two spans
+        // Opacity calculation for #line-two span
         $("#line-two span").each(function () {
           const originalRight = $(this).data("to-right");
           const currentRight = $(window).width() - $(this).offset().left;
           const distanceMoved = Math.abs(currentRight - originalRight);
 
-          // Calculate opacity: full opacity at original position, 0 opacity when moved by opacityThreshold
-          const opacity = Math.max(0, 1 - distanceMoved / opacityThreshold);
+          // Calculate opacity between 0 and 200 px fully opaque, then fading from 200px to 350px
+          let opacity = 1;
+          if (scrollY > opacityFadeStart && scrollY <= opacityFadeEnd) {
+            opacity = Math.max(
+              0,
+              1 -
+                (scrollY - opacityFadeStart) /
+                  (opacityFadeEnd - opacityFadeStart)
+            );
+          }
+
           $(this).css({ opacity: opacity });
         });
 
+        // Opacity for subtext
         $("#subtext").css({
-          opacity: window.scrollY > 200 ? 1 - (scrollY - 200) / 200 : 1,
+          opacity:
+            scrollY < opacityStart
+              ? 1
+              : scrollY > opacityFadeEnd
+              ? 0
+              : 1 -
+                (scrollY - opacityFadeStart) /
+                  (opacityFadeEnd - opacityFadeStart),
         });
       });
-      /*$("#kenneth, #line-two").css({
-        transition: "transform 0.05s",
-      });*/
+
+      particlesJS("body", {
+        particles: {
+          number: { value: 80, density: { enable: true, value_area: 800 } },
+          color: { value: "#00ff00" },
+          shape: {
+            type: "circle",
+            stroke: { width: 0, color: "#000000" },
+          },
+          opacity: {
+            value: 0.5,
+            random: true,
+            anim: { enable: true, speed: 1, opacity_min: 0 },
+          },
+          size: { value: 3, random: true, anim: { enable: false } },
+          line_linked: { enable: false },
+          move: { enable: true, speed: 1, direction: "none", random: true },
+        },
+        interactivity: {
+          events: {
+            onhover: { enable: true, mode: "repulse" },
+          },
+        },
+      });
     </script>
   </body>
 </html>
