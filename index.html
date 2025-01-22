@@ -1,10 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Document</title>
     <style>
+      html,
+      body {
+        touch-action: none; /* Prevents pinch gestures */
+        user-select: none; /* Prevents double-tap zoom */
+      }
       @font-face {
         font-family: "Gloock";
         src: url("./Gloock-Regular.ttf");
@@ -125,6 +133,20 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/particlesjs/2.2.2/particles.min.js"></script>
     <script>
+      document.addEventListener("gesturestart", function (e) {
+        e.preventDefault();
+      });
+
+      // Disable zoom with touchmove
+      document.addEventListener(
+        "touchmove",
+        function (e) {
+          if (e.scale !== 1) {
+            e.preventDefault();
+          }
+        },
+        { passive: false }
+      );
       //Variables
       let hoverAnimationEnabled = true;
       let autoSpan = "";
