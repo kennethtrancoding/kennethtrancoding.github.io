@@ -18,11 +18,14 @@
         src: url("./Gloock-Regular.ttf");
       }
       @font-face {
+        font-family: "Inter";
+        src: url("./Inter.ttf");
+      }
+      @font-face {
         font-family: "Lato";
         src: url("../Lato-Regular.ttf");
       }
       body {
-        height: 5000px;
         color: rgb(239, 239, 239);
         background-color: rgb(19, 15, 15);
         user-select: none;
@@ -102,6 +105,10 @@
         height: 100%;
         z-index: -1; /* Place it behind other content */
       }
+      #button {
+        width: 50px;
+        height: 50px;
+      }
     </style>
   </head>
   <body>
@@ -113,10 +120,13 @@
       <a>Settings</a>
     </header>-->
     <div id="title-cont-cont">
-      <button onclick="scrollStart(window.innerHeight,700)">scroll</button>
+      <button
+        id="scroll"
+        onclick="scrollStart(window.innerHeight,700)"
+      ></button>
 
       <div id="title-cont">
-        <span
+        <!--  <span
           style="
             background-color: linear-gradient(
               rgb(0, 0, 0),
@@ -127,19 +137,24 @@
             width: 100vw;
             height: 100vw;
           "
-        ></span>
-        <div class="main" id="kenneth">Kenneth</div>
+        ></span>-->
+        <div class="main" id="kenneth"><p>Kenneth</p></div>
         <span id="line-two-cont">
-          <div class="main" id="line-two">trancoding</div></span
+          <div class="main" id="line-two"><p>trancoding</p></div></span
         >
         <h2 id="subtext">Welcome to my corner of the web!</h2>
       </div>
     </div>
     <br class="break" />
-
+    <span id="my-projects-cont">
+      <div class="main" id="my-projects"><p>My Projects</p></div></span
+    >
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/particlesjs/2.2.2/particles.min.js"></script>
     <script>
+      $("body").css({
+        height: 2 * window.innerHeight + "px",
+      });
       window.scrollTo(0, 1);
       document.addEventListener("gesturestart", function (e) {
         e.preventDefault();
@@ -179,10 +194,14 @@
         { passive: false }
       );
       //Variables
-      const scrollThreshold = 60;
-      let hoverAnimationEnabled = scrollY <= scrollThreshold;
+      const titleScrollThreshold = 30;
+      const projectPageScrollThreshold = window.innerHeight - 30;
+
+      let titleHoverAnimationEnabled = scrollY <= titleScrollThreshold;
+      let projectPageHoverAnimationEnabled =
+        scrollY >= projectPageScrollThreshold;
       let autoSpan = "";
-      // Makes each character in Kennethtrancoding an individual span
+      // Makes each character in Kennethtrancoding & My Projects an individual span
 
       for (let letter of $("#kenneth").text().split("")) {
         autoSpan += `<span data-original="${letter}"><p>${letter}</p></span>`;
@@ -192,7 +211,7 @@
       $("#kenneth span").each(function () {
         $(this).attr("data-to-left", $(this).offset().left);
       });
-
+      //////
       autoSpan = "";
 
       for (let letter of $("#line-two").text().split("")) {
@@ -206,6 +225,28 @@
           $(window).width() - $(this).offset().left
         );
       });
+      //////
+      autoSpan = "";
+
+      for (let letter of $("#my-projects").text().split("")) {
+        autoSpan += `<span data-original="${letter}"><p>${letter}</p></span>`;
+      }
+      $("#my-projects").html(autoSpan);
+
+      $("#my-projects span").each(function () {
+        $(this).attr(
+          "data-to-right",
+          $(window).width() - $(this).offset().left
+        );
+      });
+
+      //  $("#my-projects span").ready(function () {
+      //    console.log("Ready");
+      //  });
+      //  $("#my-projects span").on("mouseover", function () {
+      //    console.log("Hovered");
+      //  });
+
       //Glitch characters, randint
 
       function randint(min, max) {
@@ -255,50 +296,61 @@
       }
       //Mouse-over title
       let glitchInterval = null;
-
-      $("#kenneth span, #line-two span").on("mouseover", function () {
-        if (hoverAnimationEnabled) {
-          let selected = $(this);
-          $(this)
-            .parent()
-            .children()
-            .each(function () {
-              $(this).css({
-                "text-shadow":
-                  "0px 0px " +
-                  20 / 1.5 ** Math.abs($(this).index() - selected.index()) +
-                  "px, -1px -1px 2px rgb(8, 244, 43), 4px 4px 1px gray, 0px -6px 15px black",
-                "font-size":
-                  "clamp(12vw, " +
-                  Math.floor(
-                    13 + 15 / 3 ** Math.abs($(this).index() - selected.index())
-                  ) +
-                  "vw, 20vw)",
-                "line-height": "0.1ex",
-              });
+      function mouseOverEffect(selection) {
+        let selected = selection;
+        selected
+          .parent()
+          .children()
+          .each(function () {
+            selected.css({
+              "text-shadow":
+                "0px 0px " +
+                20 / 1.5 ** Math.abs(selected.index() - selected.index()) +
+                "px, -1px -1px 2px rgb(8, 244, 43), 4px 4px 1px gray, 0px -6px 15px black",
+              "font-size":
+                "clamp(12vw, " +
+                Math.floor(
+                  13 + 15 / 3 ** Math.abs(selected.index() - selected.index())
+                ) +
+                "vw, 20vw)",
+              "line-height": "0.1ex",
             });
+          });
 
-          // Clear any existing interval to prevent duplicates
-          if (glitchInterval !== null) {
-            clearInterval(glitchInterval);
-          }
-
-          // Start a new interval
-          glitchInterval = setInterval(function () {
-            glitch(selected);
-          }, 50);
-        }
-      });
-
-      $("#kenneth span, #line-two span").on("mouseout", function () {
-        // Clear interval when mouse leaves
+        // Clear any existing interval to prevent duplicates
         if (glitchInterval !== null) {
           clearInterval(glitchInterval);
-          glitchInterval = null;
-          $(this).text($(this).attr("data-original"));
+        }
+
+        // Start a new interval
+        glitchInterval = setInterval(function () {
+          glitch(selected);
+        }, 50);
+      }
+      $("#kenneth span, #line-two span").on("mouseover", function () {
+        if (titleHoverAnimationEnabled) {
+          mouseOverEffect($(this));
         }
       });
-      $("#kenneth, #line-two").on("mouseout", function () {
+      $("#my-projects span").on("mouseover", function () {
+        if (projectPageHoverAnimationEnabled) {
+          mouseOverEffect($(this));
+        }
+      });
+
+      $("#kenneth span, #line-two span, #my-projects span").on(
+        "mouseout",
+        function () {
+          // Clear interval when mouse leaves
+          if (glitchInterval !== null) {
+            clearInterval(glitchInterval);
+            glitchInterval = null;
+            $(this).text($(this).attr("data-original"));
+          }
+        }
+      );
+
+      $("#kenneth, #line-two, #my-projects").on("mouseout", function () {
         $(this)
           .children()
           .each(function () {
@@ -308,27 +360,28 @@
               "line-height": "normal",
               transform: "",
             });
+            $(this).text($(this).attr("data-original"));
           });
       });
 
-      hoverAnimationEnabled = true;
+      titleHoverAnimationEnabled = true;
       $(window).on("scroll", function () {
-        hoverAnimationEnabled = scrollY <= scrollThreshold;
-        if (scrollY > scrollThreshold) hoverAnimationEnabled = false;
-        else hoverAnimationEnabled = true;
+        titleHoverAnimationEnabled = scrollY <= titleScrollThreshold;
+        projectPageHoverAnimationEnabled =
+          scrollY >= projectPageScrollThreshold;
 
         // Translate the elements based on scroll position
         $("#kenneth").css({
           transform:
-            scrollY < scrollThreshold
+            scrollY < titleScrollThreshold
               ? "translate(0, 0)"
-              : "translate(-" + (scrollY - scrollThreshold) + "px, 0)",
+              : "translate(-" + (scrollY - titleScrollThreshold) + "px, 0)",
         });
         $("#line-two").css({
           transform:
-            scrollY < scrollThreshold
+            scrollY < titleScrollThreshold
               ? "translate(0, 0)"
-              : "translate(" + (scrollY - scrollThreshold) + "px, 0)",
+              : "translate(" + (scrollY - titleScrollThreshold) + "px, 0)",
         });
 
         const opacityStart = 0; // When scrolling starts
@@ -336,7 +389,7 @@
         const opacityFadeEnd = 700; // Fully faded
         const opacityEnd = 700; // Maximum scroll to fully fade
 
-        // Opacity calculation for #kenneth span
+        // Opacity calculation
         $("#kenneth span").each(function () {
           const originalLeft = $(this).data("to-left");
           const currentLeft = $(this).offset().left;
@@ -355,8 +408,6 @@
 
           $(this).css({ opacity: opacity });
         });
-
-        // Opacity calculation for #line-two span
         $("#line-two span").each(function () {
           const originalRight = $(this).data("to-right");
           const currentRight = $(window).width() - $(this).offset().left;
@@ -375,7 +426,6 @@
 
           $(this).css({ opacity: opacity });
         });
-
         // Opacity for subtext
         $("#subtext").css({
           opacity:
