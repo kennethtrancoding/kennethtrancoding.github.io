@@ -18,17 +18,13 @@
         src: url("./Gloock-Regular.ttf");
       }
       @font-face {
-        font-family: "Inter";
-        src: url("./Inter.ttf");
-      }
-      @font-face {
         font-family: "Lato";
         src: url("../Lato-Regular.ttf");
       }
       body {
         height: 5000px;
         color: rgb(239, 239, 239);
-        background-color: black;
+        background-color: rgb(19, 15, 15);
         user-select: none;
         font-family: "Gloock";
         letter-spacing: 0.05em;
@@ -98,9 +94,18 @@
       #break {
         background-color: rgb(8, 244, 43);
       }
+      #particles-js {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1; /* Place it behind other content */
+      }
     </style>
   </head>
   <body>
+    <div id="particles-js"></div>
     <!--   <header>
       <a>About me</a>
       <a>Why I code</a>
@@ -108,6 +113,8 @@
       <a>Settings</a>
     </header>-->
     <div id="title-cont-cont">
+      <button onclick="scrollStart(window.innerHeight,700)">scroll</button>
+
       <div id="title-cont">
         <span
           style="
@@ -128,14 +135,38 @@
         <h2 id="subtext">Welcome to my corner of the web!</h2>
       </div>
     </div>
-    <div class="break" style="height: 100px"><p>break</p></div>
+    <br class="break" />
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/particlesjs/2.2.2/particles.min.js"></script>
     <script>
+      window.scrollTo(0, 1);
       document.addEventListener("gesturestart", function (e) {
         e.preventDefault();
       });
+
+      function scrollStart(targetY, duration) {
+        const startY = window.scrollY;
+        const distance = targetY - startY;
+        const startTime = performance.now();
+
+        function scrollStep(currentTime) {
+          const elapsedTime = currentTime - startTime;
+          const progress = Math.min(elapsedTime / duration, 1); // Limit progress to 1
+          const ease =
+            progress < 0.5
+              ? 2 * progress ** 2
+              : 1 - Math.pow(-2 * progress + 2, 2) / 2; // Ease-in-out
+
+          window.scrollTo(0, startY + distance * ease);
+
+          if (progress < 1) {
+            requestAnimationFrame(scrollStep);
+          }
+        }
+
+        requestAnimationFrame(scrollStep);
+      }
 
       // Disable zoom with touchmove
       document.addEventListener(
@@ -148,7 +179,8 @@
         { passive: false }
       );
       //Variables
-      let hoverAnimationEnabled = true;
+      const scrollThreshold = 60;
+      let hoverAnimationEnabled = scrollY <= scrollThreshold;
       let autoSpan = "";
       // Makes each character in Kennethtrancoding an individual span
 
@@ -254,7 +286,7 @@
           // Start a new interval
           glitchInterval = setInterval(function () {
             glitch(selected);
-          }, 100);
+          }, 50);
         }
       });
 
@@ -279,8 +311,7 @@
           });
       });
 
-      const scrollThreshold = 60;
-      hoverAnimationEnabled = scrollY <= scrollThreshold;
+      hoverAnimationEnabled = true;
       $(window).on("scroll", function () {
         hoverAnimationEnabled = scrollY <= scrollThreshold;
         if (scrollY > scrollThreshold) hoverAnimationEnabled = false;
@@ -356,30 +387,6 @@
                 (scrollY - opacityFadeStart) /
                   (opacityFadeEnd - opacityFadeStart),
         });
-      });
-
-      particlesJS("body", {
-        particles: {
-          number: { value: 80, density: { enable: true, value_area: 800 } },
-          color: { value: "#00ff00" },
-          shape: {
-            type: "circle",
-            stroke: { width: 0, color: "#000000" },
-          },
-          opacity: {
-            value: 0.5,
-            random: true,
-            anim: { enable: true, speed: 1, opacity_min: 0 },
-          },
-          size: { value: 3, random: true, anim: { enable: false } },
-          line_linked: { enable: false },
-          move: { enable: true, speed: 1, direction: "none", random: true },
-        },
-        interactivity: {
-          events: {
-            onhover: { enable: true, mode: "repulse" },
-          },
-        },
       });
     </script>
   </body>
