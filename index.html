@@ -8,14 +8,9 @@
     <meta charset="UTF-8" />
     <title>Kennethtrancoding</title>
     <style>
-      html,
-      body {
-        touch-action: none; /* Prevents pinch gestures */
-        user-select: none; /* Prevents double-tap zoom */
-      }
       @font-face {
         font-family: "Gloock";
-        src: url("./Gloock-Regular.ttf");
+        src: url("../Gloock-Regular.ttf");
       }
       @font-face {
         font-family: "Inter";
@@ -25,13 +20,17 @@
         font-family: "Lato";
         src: url("../Lato-Regular.ttf");
       }
+      html,
       body {
+        touch-action: none; /* Prevents pinch gestures */
+        user-select: none; /* Prevents double-tap zoom */
         color: rgb(239, 239, 239);
-        background-color: rgb(19, 15, 15);
+        background-color: black;
         user-select: none;
         font-family: "Gloock";
         letter-spacing: 0.05em;
       }
+
       header {
         border-top: 2px solid gray;
         border-bottom: 2px solid gray;
@@ -40,7 +39,7 @@
         justify-content: space-around;
         position: sticky;
         top: 2.5em;
-        font-family: "Lato";
+        font-family: "SF";
       }
       #title-cont-cont {
         width: 100%;
@@ -84,14 +83,14 @@
       }
       .main {
         font-family: "Gloock";
-        font-size: clamp(120px, 12vw, 180px);
+        font-size: clamp(120px, 12vw, 240px);
         text-shadow: -1px -1px 2px rgb(8, 244, 43), 4px 4px 1px gray;
       }
 
       #subtext {
-        font-size: clamp(24px, 3vw, 64px);
+        font-size: clamp(24px, 4vw, 80px);
         text-align: center;
-        font-family: "Lato";
+        font-family: "SF";
         text-shadow: 2px 2px 1px gray;
       }
       #break {
@@ -101,14 +100,47 @@
         position: fixed;
         top: 0;
         left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: -1; /* Place it behind other content */
+        width: 100vw;
+        height: 100vh;
+        z-index: -1; /* Ensures it stays behind other content */
+        background: black; /* Adjust if needed */
       }
-      #button {
+
+      #scroll {
         width: 50px;
         height: 50px;
+        background-color: inherit;
+        border: none;
+        display: flex;
+        position: absolute;
+        bottom: 30px;
+        margin: 0px auto 0px;
       }
+      #scroll svg {
+        width: 50px;
+        height: 50px;
+        filter: drop-shadow(-1px -1px 1px rgb(8, 244, 43))
+          drop-shadow(3px 3px 3px gray);
+      }
+      #my-projects {
+        font-size: clamp(120px, 11vw, 240px);
+      }
+      /* Creating hexagon shape */
+      #hexagon {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -61%);
+        mix-blend-mode: difference;
+        z-index: 1000;
+        pointer-events: none;
+        filter: drop-shadow(-1px -1px 1px rgb(8, 244, 43))
+          drop-shadow(3px 3px 3px gray);
+      }
+
+      /* This content will be inside the hexagon */
     </style>
   </head>
   <body>
@@ -120,10 +152,11 @@
       <a>Settings</a>
     </header>-->
     <div id="title-cont-cont">
-      <button
-        id="scroll"
-        onclick="scrollStart(window.innerHeight,700)"
-      ></button>
+      <button id="scroll" onclick="scrollStart(window.innerHeight,700)">
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="50" fill="rgb(239, 239, 239)" />
+        </svg>
+      </button>
 
       <div id="title-cont">
         <!--  <span
@@ -142,15 +175,28 @@
         <span id="line-two-cont">
           <div class="main" id="line-two"><p>trancoding</p></div></span
         >
-        <h2 id="subtext">Welcome to my corner of the web!</h2>
+        <h2 id="subtext">Welcome to my website!</h2>
+        <svg
+          id="hexagon"
+          version="1.1"
+          xmlns="http://www.w3.org/2000/svg"
+          width="600"
+          height="520"
+          viewbox="0 0 600 519.6152422706632"
+        >
+          <path
+            fill="#EFEFEF"
+            d="M0 259.8076211353316L150 0L450 0L600 259.8076211353316L450 519.6152422706632L150 519.6152422706632Z"
+          ></path>
+        </svg>
       </div>
     </div>
     <br class="break" />
-    <span id="my-projects-cont">
-      <div class="main" id="my-projects"><p>My Projects</p></div></span
+    <span class="main" id="my-projects-cont">
+      <div id="my-projects"><p>My Projects</p></div></span
     >
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/particlesjs/2.2.2/particles.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/particles.js/1.0.0/particles.js"></script>
     <script>
       $("body").css({
         height: 2 * window.innerHeight + "px",
@@ -207,11 +253,9 @@
         autoSpan += `<span data-original="${letter}"><p>${letter}</p></span>`;
       }
       $("#kenneth").html(autoSpan);
-
       $("#kenneth span").each(function () {
-        $(this).attr("data-to-left", $(this).offset().left);
-      });
-      //////
+        $(this).attr("data-to-top", $(this).offset().top);
+      }); //////
       autoSpan = "";
 
       for (let letter of $("#line-two").text().split("")) {
@@ -239,13 +283,6 @@
           $(window).width() - $(this).offset().left
         );
       });
-
-      //  $("#my-projects span").ready(function () {
-      //    console.log("Ready");
-      //  });
-      //  $("#my-projects span").on("mouseover", function () {
-      //    console.log("Hovered");
-      //  });
 
       //Glitch characters, randint
 
@@ -297,25 +334,33 @@
       //Mouse-over title
       let glitchInterval = null;
       function mouseOverEffect(selection) {
-        let selected = selection;
-        selected
-          .parent()
-          .children()
-          .each(function () {
-            selected.css({
-              "text-shadow":
-                "0px 0px " +
-                20 / 1.5 ** Math.abs(selected.index() - selected.index()) +
-                "px, -1px -1px 2px rgb(8, 244, 43), 4px 4px 1px gray, 0px -6px 15px black",
-              "font-size":
-                "clamp(12vw, " +
-                Math.floor(
-                  13 + 15 / 3 ** Math.abs(selected.index() - selected.index())
-                ) +
-                "vw, 20vw)",
-              "line-height": "0.1ex",
-            });
+        const parent = selection.parent();
+        const siblings = parent.children();
+        const index = selection.index();
+
+        selection.css({
+          "text-shadow":
+            "0px 0px 20px, -1px -1px 2px rgb(8, 244, 43), 4px 4px 1px gray, 0px -6px 15px black",
+          "font-size": "clamp(150px, 20vw, 400px)",
+          "line-height": "0.1ex",
+        });
+
+        if (index + 1 < siblings.length) {
+          siblings.eq(index + 1).css({
+            "text-shadow":
+              "0px 0px 20px, -1px -1px 2px rgb(8, 244, 43), 4px 4px 1px gray, 0px -6px 15px black",
+            "font-size": "clamp(120px, 16vw, 350px)",
+            "line-height": "0.1ex",
           });
+        }
+        if (index - 1 >= 0) {
+          siblings.eq(index - 1).css({
+            "text-shadow":
+              "0px 0px 20px, -1px -1px 2px rgb(8, 244, 43), 4px 4px 1px gray, 0px -6px 15px black",
+            "font-size": "clamp(120px, 16vw, 350px)",
+            "line-height": "0.1ex",
+          });
+        }
 
         // Clear any existing interval to prevent duplicates
         if (glitchInterval !== null) {
@@ -324,7 +369,7 @@
 
         // Start a new interval
         glitchInterval = setInterval(function () {
-          glitch(selected);
+          glitch(selection);
         }, 50);
       }
       $("#kenneth span, #line-two span").on("mouseover", function () {
@@ -384,58 +429,62 @@
               : "translate(" + (scrollY - titleScrollThreshold) + "px, 0)",
         });
 
-        const opacityStart = 0; // When scrolling starts
-        const opacityFadeStart = 200; // Fully opaque
-        const opacityFadeEnd = 700; // Fully faded
-        const opacityEnd = 700; // Maximum scroll to fully fade
+        const fadeStart = 200; // Start fading at 200px
+        const fadeEnd = 500; // Fully faded at 500px
 
         // Opacity calculation
-        $("#kenneth span").each(function () {
-          const originalLeft = $(this).data("to-left");
-          const currentLeft = $(this).offset().left;
-          const distanceMoved = Math.abs(currentLeft - originalLeft);
+        $("#kenneth span, #line-two span, #hexagon, #subtext").each(
+          function () {
+            const originalTop = $(this).data("to-top");
+            const currentTop = $(this)[0].getBoundingClientRect().top;
+            const distanceMoved = currentTop - originalTop;
 
-          // Calculate opacity between 0 and 200 px fully opaque, then fading from 200px to 350px
-          let opacity = 1;
-          if (scrollY > opacityFadeStart && scrollY <= opacityFadeEnd) {
-            opacity = Math.max(
-              0,
-              1 -
-                (scrollY - opacityFadeStart) /
-                  (opacityFadeEnd - opacityFadeStart)
-            );
+            const fadeStart = 200;
+            const fadeEnd = 800;
+            let opacity = 1;
+
+            if (scrollY <= fadeStart) {
+              opacity = 1; // Fully visible before fading starts
+            } else if (scrollY >= fadeEnd) {
+              opacity = 0; // Fully faded out
+            } else {
+              // Gradual fade formula
+              opacity = Math.max(
+                0,
+                1 - (scrollY - fadeStart) / (fadeEnd - fadeStart)
+              );
+            }
+
+            $(this).css({ opacity: opacity });
+          }
+        );
+
+        $("#my-projects").each(function () {
+          const originalTop = $(this).data("to-top");
+          const currentTop = $(this)[0].getBoundingClientRect().top;
+          const distanceMoved = currentTop - originalTop;
+
+          // Set the start and end points for opacity transition
+          const fadeStart = 0; // Start of the fade
+          const fadeEnd = 350; // Point where opacity is 0%
+          const fadeMax = 800; // Point where opacity is 100%
+
+          let opacity = 0;
+
+          // If scrollY is between fadeStart and fadeEnd, opacity should be 0
+          if (scrollY < fadeEnd) {
+            opacity = 0;
+          }
+          // Gradually increase opacity after fadeEnd until fadeMax
+          else if (scrollY >= fadeEnd && scrollY <= fadeMax) {
+            opacity = (scrollY - fadeEnd) / (fadeMax - fadeEnd); // Linear interpolation
+          }
+          // After fadeMax, the opacity remains at 100%
+          else {
+            opacity = 1;
           }
 
           $(this).css({ opacity: opacity });
-        });
-        $("#line-two span").each(function () {
-          const originalRight = $(this).data("to-right");
-          const currentRight = $(window).width() - $(this).offset().left;
-          const distanceMoved = Math.abs(currentRight - originalRight);
-
-          // Calculate opacity between 0 and 200 px fully opaque, then fading from 200px to 350px
-          let opacity = 1;
-          if (scrollY > opacityFadeStart && scrollY <= opacityFadeEnd) {
-            opacity = Math.max(
-              0,
-              1 -
-                (scrollY - opacityFadeStart) /
-                  (opacityFadeEnd - opacityFadeStart)
-            );
-          }
-
-          $(this).css({ opacity: opacity });
-        });
-        // Opacity for subtext
-        $("#subtext").css({
-          opacity:
-            scrollY < opacityStart
-              ? 1
-              : scrollY > opacityFadeEnd
-              ? 0
-              : 1 -
-                (scrollY - opacityFadeStart) /
-                  (opacityFadeEnd - opacityFadeStart),
         });
       });
     </script>
