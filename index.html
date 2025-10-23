@@ -1,35 +1,140 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kennethtrancoding</title>
-    <style>
-      body {
-        background-color: rgb(64, 64, 64);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-      }
-      h1,
-      p {
-        font-family: Arial, Helvetica, sans-serif;
-        color: antiquewhite;
-      }
-      h1 {
-        font-size: 150px;
-        line-height: 50%;
-      }
-      p {
-        font-size: 40px;
-      }
-    </style>
-  </head>
-  <body>
-    <div>
-      <h1>Kennethtrancoding</h1>
-      <p>Nothing yet now, but check back later!</p>
-    </div>
-  </body>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Kennethtrancoding</title>
+		<style>
+			body {
+				background-color: rgb(38, 38, 38);
+				min-height: 100svh;
+			}
+			.underline {
+				width: fit-content;
+				height: fit-content;
+			}
+			h1 {
+				font-size: 150px;
+				line-height: 50%;
+			}
+			h1,
+			a {
+				font-family: Arial, Helvetica, sans-serif;
+				color: antiquewhite;
+			}
+			a {
+				width: fit-content;
+				cursor: pointer;
+				font-size: 2.5rem;
+				text-decoration: none;
+				display: inline-block;
+				transform: scale(1);
+				transition: transform 0.35s ease-in-out;
+			}
+			.underline::after {
+				content: "";
+				display: block;
+				height: 3px;
+				width: 100%;
+				background: antiquewhite;
+				transform: scaleX(0);
+				transform-origin: left;
+				transition: transform 0.35s ease-in-out;
+			}
+			.underline.is-hovered::after {
+				transform: scaleX(1);
+			}
+			a.is-active {
+				animation-name: click-scale-down;
+				animation-fill-mode: forwards;
+				animation-duration: 0.05s;
+				animation-timing-function: ease-in;
+			}
+			a.is-post-click {
+				animation-name: post-click-burst;
+				animation-duration: 0.2s;
+				animation-timing-function: cubic-bezier(0.75, 0.05, 0.51, 1.71);
+			}
+			@media (prefers-reduced-motion: reduce) {
+				a,
+				.underline::after {
+					transition: none !important;
+				}
+			}
+			@keyframes click-scale-down {
+				0% {
+					font-size: 2.5rem;
+				}
+				100% {
+					font-size: 2.2rem;
+				}
+			}
+			@keyframes post-click-burst {
+				0% {
+					font-size: 2.2rem;
+				}
+				100% {
+					font-size: 2.5rem;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div>
+			<h1>Kennethtrancoding</h1>
+			<div class="underline">
+				<a href="https://myfirstday.kennethtrancoding.com/">
+					<strong>My First Day</strong> – Congressional App Challenge [October 30, 2025]
+				</a>
+			</div>
+		</div>
+
+		<script>
+			document.addEventListener("DOMContentLoaded", () => {
+				const wrapper = document.querySelector(".underline");
+				const link = wrapper?.querySelector("a");
+				if (!wrapper || !link) return;
+
+				const clearWrapperStates = () => {
+					wrapper.classList.remove("is-hovered");
+				};
+
+				wrapper.classList.remove("is-hovered");
+				link.classList.remove("is-active", "is-post-click");
+				link.innerHTML =
+					"<strong>My First Day</strong> – Congressional App Challenge [October 30, 2025]";
+
+				wrapper.addEventListener("pointerenter", () => {
+					wrapper.classList.add("is-hovered");
+				});
+				wrapper.addEventListener("pointerleave", () => {
+					clearWrapperStates();
+					link.classList.remove("is-active");
+				});
+
+				link.addEventListener("pointerdown", () => {
+					link.classList.add("is-active");
+					link.classList.remove("is-post-click");
+				});
+
+				link.addEventListener("pointerup", (e) => {
+					if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+
+					e.preventDefault();
+					link.classList.remove("is-active");
+
+					link.classList.add("is-post-click");
+
+					const href = link.href;
+					setTimeout(() => {
+						link.innerHTML = "Taking you there...";
+					}, 75);
+
+					setTimeout(() => {
+						window.location.href = href;
+					}, 220);
+				});
+			});
+		</script>
+	</body>
 </html>
