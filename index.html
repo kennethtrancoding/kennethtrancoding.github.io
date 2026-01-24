@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -6,27 +6,52 @@
 		<title>Kennethtrancoding</title>
 		<style>
 			body {
-				background-color: rgb(38, 38, 38);
+				background-color: rgb(18, 18, 18);
 				min-height: 100svh;
 			}
 			.underline {
 				width: fit-content;
 				height: fit-content;
 			}
-			h1 {
-				font-size: 150px;
+			#title {
+				font-size: 120px;
 				line-height: 50%;
 			}
-			h1,
-			a {
+			.title-letter {
+				display: inline-block;
+				transition:
+					font-size 0.15s ease,
+					line-height 0.15s ease,
+					transform 0.15s ease,
+					text-shadow 0.15s ease;
+				transform-origin: bottom center;
+			}
+			.title-letter.is-main {
+				font-size: clamp(150px, 20vw, 400px);
+				line-height: 0.1ex;
+				text-shadow: 0 0 22px rgba(255, 255, 255, 0.9);
+			}
+			.title-letter.is-neighbor {
+				font-size: clamp(120px, 16vw, 350px);
+				line-height: 0.1ex;
+				text-shadow: 0 0 14px rgba(255, 255, 255, 0.65);
+			}
+			.link-group {
+				display: flex;
+				flex-direction: column;
+				gap: 14px;
+			}
+			#title,
+			.link {
 				font-family: Arial, Helvetica, sans-serif;
 				color: antiquewhite;
 			}
-			a {
+			.link {
 				width: fit-content;
 				cursor: pointer;
 				font-size: 2.5rem;
 				text-decoration: none;
+				margin: 0;
 				display: inline-block;
 				transform: scale(1);
 				transition: transform 0.35s ease-in-out;
@@ -44,19 +69,19 @@
 			.underline.is-hovered::after {
 				transform: scaleX(1);
 			}
-			a.is-active {
+			.link.is-active {
 				animation-name: click-scale-down;
 				animation-fill-mode: forwards;
 				animation-duration: 0.05s;
 				animation-timing-function: ease-in;
 			}
-			a.is-post-click {
+			.link.is-post-click {
 				animation-name: post-click-burst;
 				animation-duration: 0.2s;
 				animation-timing-function: cubic-bezier(0.75, 0.05, 0.51, 1.71);
 			}
 			@media (prefers-reduced-motion: reduce) {
-				a,
+				.link,
 				.underline::after {
 					transition: none !important;
 				}
@@ -80,59 +105,126 @@
 		</style>
 	</head>
 	<body>
-		<div>
-			<h1>Kennethtrancoding</h1>
+		<div class="link-group">
+			<h1 id="title">Kennethtrancoding</h1>
 			<div class="underline">
-				<a href="https://myfirstday.kennethtrancoding.com/">
+				<p class="link" data-ref="https://myfirstday.kennethtrancoding.com/">
 					<strong>My First Day</strong> – Congressional App Challenge [October 30, 2025]
-				</a>
+				</p>
+			</div>
+
+			<div class="underline">
+				<p class="link" data-ref="./Presidential-AI-Challenge.pdf">
+					<strong>Basic Life-Support</strong> – Presidential AI Challenge [January 20,
+					2026]
+				</p>
+			</div>
+
+			<div class="underline">
+				<p class="link" data-ref="./metric.html">Metric Conversions (Quiz)</p>
 			</div>
 		</div>
 
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 		<script>
 			document.addEventListener("DOMContentLoaded", () => {
-				const wrapper = document.querySelector(".underline");
-				const link = wrapper?.querySelector("a");
-				if (!wrapper || !link) return;
+				let autoSpan = "";
 
-				const clearWrapperStates = () => {
-					wrapper.classList.remove("is-hovered");
+				for (let letter of $("#title").text().split("")) {
+					autoSpan += `<span class="title-letter" data-original="${letter}">${letter}</span>`;
+				}
+				$("#title").html(autoSpan);
+
+				const letters = $("#title").children();
+
+				function mouseOverEffect(selection) {
+					const index = selection.index();
+
+					letters.removeClass("is-main is-neighbor");
+					selection.addClass("is-main");
+
+					if (index + 1 < letters.length) {
+						letters.eq(index + 1).addClass("is-neighbor");
+					}
+					if (index - 1 >= 0) {
+						letters.eq(index - 1).addClass("is-neighbor");
+					}
+				}
+
+				$("#title > *").on("mouseover", function () {
+					mouseOverEffect($(this));
+				});
+
+				$("#title").on("mouseout", function () {
+					letters.removeClass("is-main is-neighbor");
+				});
+				////////////////////////////////
+
+				const wrappers = document.querySelectorAll(".underline");
+				if (!wrappers.length) return;
+
+				let shrinkTimeoutId = null;
+				const resetLinks = () => {
+					document.querySelectorAll(".underline [data-ref]").forEach((link) => {
+						const wrapper = link.closest(".underline");
+						if (!wrapper) return;
+						const originalHTML = link.dataset.originalHtml;
+						if (originalHTML) link.innerHTML = originalHTML;
+						link.classList.remove("is-active", "is-post-click");
+						wrapper.classList.remove("is-hovered");
+					});
 				};
 
-				wrapper.classList.remove("is-hovered");
-				link.classList.remove("is-active", "is-post-click");
-				link.innerHTML =
-					"<strong>My First Day</strong> – Congressional App Challenge [October 30, 2025]";
+				wrappers.forEach((wrapper) => {
+					const link = wrapper.querySelector("[data-ref]");
+					if (!link) return;
 
-				wrapper.addEventListener("pointerenter", () => {
-					wrapper.classList.add("is-hovered");
+					link.dataset.originalHtml = link.innerHTML;
+
+					const clearWrapperStates = () => {
+						wrapper.classList.remove("is-hovered");
+					};
+
+					wrapper.classList.remove("is-hovered");
+					link.classList.remove("is-active", "is-post-click");
+
+					wrapper.addEventListener("pointerenter", () => {
+						wrapper.classList.add("is-hovered");
+					});
+					wrapper.addEventListener("pointerleave", () => {
+						clearWrapperStates();
+						link.classList.remove("is-active");
+					});
+
+					link.addEventListener("pointerdown", () => {
+						link.classList.add("is-active");
+						link.classList.remove("is-post-click");
+					});
+
+					link.addEventListener("pointerup", (e) => {
+						if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+							return;
+
+						e.preventDefault();
+						link.classList.remove("is-active");
+						link.classList.add("is-post-click");
+
+						const href = link.dataset.ref;
+						setTimeout(() => {
+							link.innerHTML = "Taking you there...";
+						}, 75);
+
+						setTimeout(() => {
+							link.innerHTML = link.dataset.originalHtml || link.innerHTML;
+							window.location.href = href;
+						}, 500);
+					});
 				});
-				wrapper.addEventListener("pointerleave", () => {
-					clearWrapperStates();
-					link.classList.remove("is-active");
-				});
 
-				link.addEventListener("pointerdown", () => {
-					link.classList.add("is-active");
-					link.classList.remove("is-post-click");
-				});
-
-				link.addEventListener("pointerup", (e) => {
-					if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-
-					e.preventDefault();
-					link.classList.remove("is-active");
-
-					link.classList.add("is-post-click");
-
-					const href = link.href;
-					setTimeout(() => {
-						link.innerHTML = "Taking you there...";
-					}, 75);
-
-					setTimeout(() => {
-						window.location.href = href;
-					}, 220);
+				window.addEventListener("pageshow", (event) => {
+					if (event.persisted) {
+						resetLinks();
+					}
 				});
 			});
 		</script>
