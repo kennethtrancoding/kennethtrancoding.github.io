@@ -73,24 +73,27 @@
 				width: 140px;
 			}
 			#next:hover {
-				background: rgb(242, 242, 242);
+				background: rgb(248, 248, 248);
 			}
 			#msg,
 			#hint,
-			#full {
+			#full,
+			#preview {
 				margin-top: 14px;
 				min-height: 28px;
 				font-size: 1.2rem;
 			}
 			#hint,
-			#full {
+			#full,
+			#preview {
 				color: #909090;
 				margin-left: auto;
 				margin-right: 20px;
 				margin-bottom: auto;
 				margin-top: 0;
 			}
-			#full {
+			#full,
+			#preview {
 				line-height: 1.2;
 			}
 			.top-nav {
@@ -157,6 +160,7 @@
 				<button id="next">New</button>
 				<div id="hint"></div>
 			</div>
+			<div id="preview"></div>
 			<div id="msg"></div>
 		</div>
 
@@ -480,7 +484,7 @@
 					name: "bar",
 					dim: { Mass: 1, Length: -1, Time: -2 },
 					factor: 1e5 * 1e3, // 1 bar = 1e5 Pa; your Pa has factor 1e3 relative to g-base
-					allowPrefix: true,
+					allowPrefix: false,
 					category: "mechanical",
 					aliases: ["b"],
 				},
@@ -809,8 +813,8 @@
 
 				if (parts.length === 1) return formatPart(parts[0]);
 				const [first, ...rest] = parts;
-				let acc = formatPart(first);
-				for (const part of rest) acc = `${acc} per ${formatPart(part)}`;
+				let acc = `(${formatPart(first)})`;
+				for (const part of rest) acc = `${acc} per (${formatPart(part)})`;
 				return acc;
 			}
 
@@ -1050,6 +1054,10 @@
 				};
 
 				for (let attempts = 0; attempts < 40; attempts++) {
+					// Reset per attempt so stale toParsed/toUnit from previous iteration
+					// cannot leak into a new pair and cause mismatched dimensions.
+					toUnit = null;
+					toParsed = null;
 					fromUnit = randomUnitExpression();
 					fromParsed = parseUnits(fromUnit);
 					if (
@@ -1096,6 +1104,8 @@
 					const alt = altCandidates.length ? pickRandom(altCandidates) : base;
 					fromUnit = base;
 					toUnit = alt;
+					fromParsed = parseUnits(fromUnit);
+					toParsed = parseUnits(toUnit);
 				}
 
 				// Final guard to avoid identical units in the question
@@ -1130,6 +1140,42 @@
 			let currentQuestion = null;
 			const setMessage = (text, cssClass = "") =>
 				$("#msg").removeClass("err ok").addClass(cssClass).text(text);
+			function updatePreview() {
+				try {
+					const raw = answerField.latex();
+					if (!raw) return $("#preview").text("");
+					const cleaned = cleanExpression(raw);
+					const tokens = tokenize(cleaned);
+					if (tokens.error) return $("#preview").text("");
+					const list = tokens.tokens || [];
+					let rebuilt = "";
+					let prevType = null;
+					for (const tok of list) {
+						const isUnit = tok.type === "unit";
+						const isNumber = tok.type === "number";
+						const isOpenParen = tok.type === "paren" && tok.value === "(";
+						const isCloseParen = tok.type === "paren" && tok.value === ")";
+						const needsStar =
+							(isUnit || isOpenParen) &&
+							(prevType === "unit" ||
+								prevType === "number" ||
+								prevType === "closeParen");
+						if (needsStar) rebuilt += "*";
+						rebuilt += tok.value;
+						prevType = isCloseParen ? "closeParen" : tok.type;
+					}
+					const plain = toPlainUnits(rebuilt);
+					const withoutParens = plain.replace(/[()]/g, "");
+					const spaced = withoutParens
+						.replace(/([0-9)])(?=[A-Za-zµ])/g, "$1 ")
+						.replace(/\s+/g, " ")
+						.trim();
+					$("#preview").text(spaced);
+				} catch (e) {
+					console.warn("Preview rendering failed", e);
+					$("#preview").text("");
+				}
+			}
 
 			function refreshMath() {
 				if (typeof MathJax === "undefined") return;
@@ -1139,6 +1185,7 @@
 
 			function renderQuestion() {
 				currentQuestion = buildQuestion();
+
 				$("#question").html(
 					`Convert \\(${currentQuestion.amount}\\,${toLatexUnits(currentQuestion.fromUnit)}\\) to \\(${toLatexUnits(currentQuestion.toUnit)}\\).`,
 				);
@@ -1149,6 +1196,7 @@
 				);
 				setMessage("");
 				answerField.latex("");
+				updatePreview();
 				refreshMath();
 			}
 			function tokenize(expression) {
@@ -1687,7 +1735,10 @@
 					.map((t) => t.replace("µ", "u"))
 					.join(" "),
 				handlers: {
-					edit: () => setMessage(""),
+					edit: () => {
+						setMessage("");
+						updatePreview();
+					},
 				},
 			});
 
