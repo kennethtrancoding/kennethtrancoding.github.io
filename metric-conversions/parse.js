@@ -6,21 +6,15 @@ import {
 	UNIT_ALIASES,
 	PREFIXES,
 	PREFIX_MULTIPLIERS,
-	PREFIX_NAMES,
 } from "./units.js";
 
 const resolveUnitKey = (symbol) => {
 	const alias = UNIT_ALIASES.find(([alias]) => alias === symbol);
 	return alias ? alias[1] : symbol;
 };
-const unitSymbols = ALL_UNIT_SYMBOLS.join("");
 const sortedPrefixes = PREFIXES.filter(Boolean).sort((a, b) => b.length - a.length);
 const sortedUnits = ALL_UNIT_SYMBOLS.slice().sort((a, b) => b.length - a.length);
-const getUnitDefinition = (symbol) => UNIT_DEFINITIONS[resolveUnitKey(symbol)];
-const getUnitName = (symbol) => {
-	const def = getUnitDefinition(symbol);
-	return def?.name || symbol;
-};
+export const getUnitDefinition = (symbol) => UNIT_DEFINITIONS[resolveUnitKey(symbol)];
 
 const normalizeMicro = (expression) => {
 	let out = "";
@@ -56,6 +50,24 @@ function expandFractions(expr) {
 	let i = 0;
 	const len = expr.length;
 	let out = "";
+
+	const wrapArg = (content) => {
+		const trimmed = content.trim();
+		if (!trimmed) return "()";
+		const startsParens = trimmed.startsWith("(") && trimmed.endsWith(")");
+		if (startsParens) {
+			let depth = 0;
+			for (let idx = 0; idx < trimmed.length; idx++) {
+				const ch = trimmed[idx];
+				if (ch === "(") depth++;
+				else if (ch === ")") depth--;
+				if (depth === 0 && idx < trimmed.length - 1) return `(${trimmed})`;
+			}
+			return trimmed;
+		}
+		if (/[+\-*/^]/.test(trimmed)) return `(${trimmed})`;
+		return trimmed;
+	};
 
 	const skipSpaces = () => {
 		while (i < len && /\s/.test(expr[i])) i++;
@@ -94,7 +106,15 @@ function expandFractions(expr) {
 				out += `\\frac{${numer}`;
 				continue;
 			}
-			out += `(${numer})/(${denom})`;
+			const wrappedNumer = wrapArg(numer);
+			const wrappedDenom = wrapArg(denom);
+			const bothEmpty = wrappedNumer === "()" && wrappedDenom === "()";
+			const numerEmpty = wrappedNumer === "()";
+			const denomEmpty = wrappedDenom === "()";
+			if (bothEmpty) out += `(${wrappedNumer})/(${wrappedDenom})`;
+			else if (denomEmpty) out += `(${wrappedNumer})/${wrappedDenom}`;
+			else if (numerEmpty) out += `${wrappedNumer}/(${wrappedDenom})`;
+			else out += `(${wrappedNumer})/(${wrappedDenom})`;
 			continue;
 		}
 		out += expr[i++];
@@ -111,6 +131,7 @@ export function cleanExpression(expression) {
 		.replace(/\u00b7/g, "*")
 		.replace(/\\+,/g, "")
 		.replace(/\\+ /g, "*")
+		.replace(/\*+/g, "*")
 		.replace(/\s+/g, "")
 		.replace(/\\operatorname\{([^}]+)\}/g, "$1")
 		.replace(/\^\{(-?\d+)\}/g, "^$1")
@@ -159,7 +180,7 @@ const matchUnitAt = (text, startIndex) => {
 	return best;
 };
 
-const scanUnitToken = (text, startIndex) => {
+export const scanUnitToken = (text, startIndex) => {
 	const unitMatch = matchUnitAt(text, startIndex);
 	if (!unitMatch) return null;
 	const exponentMatch = exponentRegex.exec(text.slice(startIndex + unitMatch.length));
@@ -167,17 +188,6 @@ const scanUnitToken = (text, startIndex) => {
 	const consumed = unitMatch.length + rawExponent.length;
 	return { ...unitMatch, rawExponent, consumed };
 };
-
-const pluralizeUnitName = (name, unitDef) => {
-	if (unitDef?.plural) return unitDef.plural;
-	if (unitDef?.invariantPlural) return name;
-	if (name.startsWith("degree ")) return name.replace("degree ", "degrees ");
-	if (name.endsWith("y")) return `${name.slice(0, -1)}ies`;
-	if (name.endsWith("s")) return name;
-	return `${name}s`;
-};
-
-const singularizeUnitName = (name) => name;
 
 export function parseUnits(expression) {
 	// Normalize a unit expression (prefixes, exponents, numerator/denominator) into
@@ -259,110 +269,6 @@ export function parseUnits(expression) {
 		bases: [...baseUnitsUsed],
 	};
 }
-
-export function toLatexUnits(expression) {
-	const parts = cleanExpression(expression).split("/");
-	const formatPart = (part) => {
-		let out = "";
-		let cursor = 0;
-		while (cursor < part.length) {
-			const ch = part[cursor];
-			if (ch === "*") {
-				out += "\\,";
-				cursor++;
-				continue;
-			}
-			const token = scanUnitToken(part, cursor);
-			if (!token) {
-				out += part.slice(cursor).replace(/\*/g, "\\,");
-				break;
-			}
-			const prefixSymbol = token.prefix === "u" ? "µ" : token.prefix;
-			const exponent = token.rawExponent ? `^{${token.rawExponent.slice(1)}}` : "";
-			out += `\\mathrm{${prefixSymbol}${token.base}}${exponent}`;
-			cursor += token.consumed;
-		}
-		return out || part;
-	};
-
-	if (parts.length === 1) return formatPart(parts[0]);
-
-	const [first, ...rest] = parts;
-	let acc = formatPart(first);
-	for (const part of rest) acc = `\\frac{${acc}}{${formatPart(part)}}`;
-	return acc;
-}
-
-export function toPlainUnits(expression, options = {}) {
-	const {
-		pluralizeNumerator = false,
-		singularizeDenominator = false,
-		wrapFractions = true,
-		wrapUnitsWith = null,
-	} = options;
-	const parts = cleanExpression(expression).split("/");
-	const formatPart = (part, isDenominator = false) => {
-		let out = "";
-		let cursor = 0;
-		const numberPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/;
-		while (cursor < part.length) {
-			const ch = part[cursor];
-			if (ch === "*") {
-				out += "*";
-				cursor++;
-				continue;
-			}
-			if (ch === "(" || ch === ")") {
-				cursor++;
-				continue;
-			}
-			const numberMatch = part.slice(cursor).match(numberPattern);
-			if (numberMatch) {
-				out += numberMatch[0];
-				cursor += numberMatch[0].length;
-				continue;
-			}
-			const token = scanUnitToken(part, cursor);
-			if (!token || token.consumed === 0) return part;
-
-			const prefixSymbol = token.prefix;
-			const base = token.base;
-			const rawExponent = token.rawExponent;
-			const prefixText = PREFIX_NAMES[prefixSymbol] || prefixSymbol;
-			const unitDef = getUnitDefinition(base);
-			const baseName = unitDef?.name || base;
-			let adjustedName = baseName;
-			if (!isDenominator && pluralizeNumerator)
-				adjustedName = pluralizeUnitName(baseName, unitDef);
-			else if (isDenominator && singularizeDenominator)
-				adjustedName = singularizeUnitName(baseName);
-			const expo = rawExponent ? `^${rawExponent.slice(1)}` : "";
-			const piece = `${prefixText ? `${prefixText}` : ""}${adjustedName}${expo}`.trim();
-			const wrapped = typeof wrapUnitsWith === "function" ? wrapUnitsWith(piece) : piece;
-			out += wrapped;
-			cursor += token.consumed;
-		}
-		const sanitized = part.replace(/[()]/g, "").trim();
-		if (!out && !sanitized) return "";
-		return out || part;
-	};
-
-	if (parts.length === 1) return formatPart(parts[0], false);
-	const [first, ...rest] = parts;
-	const wrap = (s) => {
-		if (!wrapFractions) return s;
-		if (!s) return "";
-		return `(${s})`;
-	};
-	let acc = wrap(formatPart(first, false));
-	for (const part of rest) {
-		const formatted = wrap(formatPart(part, true));
-		if (!formatted) continue;
-		acc = acc ? `${acc} per ${formatted}` : `per ${formatted}`;
-	}
-	return acc;
-}
-
 export function convertValue(value, fromUnit, toUnitExpression) {
 	const fromParsed = typeof fromUnit === "string" ? parseUnits(fromUnit) : fromUnit;
 	if (!fromParsed || fromParsed.error)
@@ -654,11 +560,11 @@ function sameUnitDefinition(a, b) {
 export function parseAnswer(rawInput, targetUnit) {
 	// Validate the player's MathQuill response, enforcing that the final units match
 	// the requested target and that the expression is dimensionally legal.
-	const trimmed = rawInput.trim();
-	if (!trimmed) return { error: "Please enter a value and units." };
+	const normalizedInput = rawInput.replace(/\s+/g, " ").trim();
+	if (!normalizedInput) return { error: "Please enter a value and units." };
 
 	try {
-		const cleaned = cleanExpression(trimmed);
+		const cleaned = cleanExpression(normalizedInput);
 		const tokens = tokenize(cleaned);
 		if (tokens.error) return { error: tokens.error };
 		const parsed = parseExpression(tokens);
