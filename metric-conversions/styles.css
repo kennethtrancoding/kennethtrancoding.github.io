@@ -48,7 +48,7 @@ button {
 	text-align: center;
 }
 #submit {
-	background: rgb(48, 48, 243);
+	background: #3030f3;
 	color: rgb(255, 255, 255);
 	width: 180px;
 }
@@ -83,6 +83,12 @@ button {
 #full,
 #preview {
 	line-height: 1.2;
+}
+#full strong {
+	color: #6161c2;
+}
+.unit-accent {
+	color: #6161c2;
 }
 .top-nav {
 	font-family: Arial, sans-serif;

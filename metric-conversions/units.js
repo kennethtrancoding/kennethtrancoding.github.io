@@ -113,6 +113,7 @@ export const UNIT_DEFINITIONS = {
 		factor: 1,
 		allowPrefix: true,
 		category: "time",
+		invariantPlural: true,
 	},
 	deg: {
 		name: "degree",
@@ -212,6 +213,7 @@ export const UNIT_DEFINITIONS = {
 		factor: 1 / 1e3,
 		allowPrefix: true,
 		category: "electrical",
+		invariantPlural: true,
 	},
 	H: {
 		name: "henry",
@@ -241,6 +243,7 @@ export const UNIT_DEFINITIONS = {
 		factor: 1,
 		allowPrefix: true,
 		category: "photometry",
+		invariantPlural: true,
 	},
 	Bq: {
 		name: "becquerel",
