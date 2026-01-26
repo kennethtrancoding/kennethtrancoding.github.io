@@ -1,16 +1,8 @@
 // Front-end controller for the metric conversions drill. Handles rendering a random
 // conversion question, live-previewing typed units, parsing the MathQuill input,
 // and validating the submitted answer.
-import {
-	cleanExpression,
-	tokenize,
-	toPlainUnits,
-	toLatexUnits,
-	parseAnswer,
-	convertValue,
-	UNIT_TOKENS,
-	parseUnits,
-} from "./parse.js";
+import { toPlainUnits, toLatexUnits } from "./parse-display.js";
+import { cleanExpression, tokenize, parseAnswer, convertValue, UNIT_TOKENS, parseUnits } from "./parse.js";
 import { buildQuestion } from "./buildQuestion.js";
 import { UNIT_DEFINITIONS } from "./units.js";
 
@@ -56,6 +48,61 @@ const questionStems = [
 	"Convert the quantity %AMOUNT% %FROM% so it is measured in %TO%.",
 	"Rewrite %AMOUNT% %FROM% so the result is in %TO%.",
 	"Find the conversion result when %AMOUNT% %FROM% is expressed as %TO%.",
+	"A measurement is recorded as %AMOUNT% %FROM% in a data table. What is the same quantity in %TO%?",
+	"An instrument displays %AMOUNT% %FROM% on its readout. Convert this to %TO%.",
+	"A value is listed as %AMOUNT% %FROM% in a specification sheet. Express it in %TO%.",
+	"A result is reported as %AMOUNT% %FROM% in a report. What does this correspond to in %TO%?",
+	"A technician notes %AMOUNT% %FROM% during a test. Rewrite the measurement in %TO%.",
+	"A measurement taken in the field is %AMOUNT% %FROM%. Convert it into %TO%.",
+	"A system logs a quantity as %AMOUNT% %FROM%. Determine the equivalent in %TO%.",
+	"A calibration record shows %AMOUNT% %FROM%. Convert that value to %TO%.",
+	"A dataset stores a quantity as %AMOUNT% %FROM%. What is the same quantity in %TO%?",
+	"A sensor output is interpreted as %AMOUNT% %FROM%. Convert this reading to %TO%.",
+	"A reference table gives %AMOUNT% %FROM%. Find the corresponding value in %TO%.",
+	"A measurement is communicated as %AMOUNT% %FROM% between teams. Express it in %TO% for consistency.",
+	"A value must be standardized: it is currently %AMOUNT% %FROM%. Convert it to %TO%.",
+	"A quantity is provided in %FROM% as %AMOUNT%. Translate it to %TO% for comparison.",
+	"A calculation requires the quantity in %TO%, but it is given as %AMOUNT% %FROM%. Convert it.",
+	"For unit consistency in an analysis, %AMOUNT% %FROM% needs to be expressed in %TO%. What is the converted value?",
+	"A measurement is written as %AMOUNT% %FROM% in one section of a document and needs to be in %TO% elsewhere. Convert it.",
+	"A model input expects %TO%, yet the available measurement is %AMOUNT% %FROM%. Determine the equivalent in %TO%.",
+	"A conversion step is required to align units: change %AMOUNT% %FROM% into %TO%.",
+	"An equation uses %TO% units, but the given quantity is %AMOUNT% %FROM%. Convert it to %TO%.",
+	"A specification is given as %AMOUNT% %FROM%, but a comparison requires %TO%. Convert the quantity.",
+	"A measurement is expressed in %FROM% as %AMOUNT%. Restate it in %TO% to match the rest of the values.",
+	"A document mixes units, and one entry is %AMOUNT% %FROM%. Convert that entry to %TO%.",
+	"A value appears as %AMOUNT% %FROM% in a set of results. Re-express it in %TO%.",
+	"A quantity is recorded as %AMOUNT% %FROM%, but the required unit is %TO%. What is the equivalent?",
+	"A measurement is written as %AMOUNT% %FROM%. What is it in %TO%?",
+	"A value is given as %AMOUNT% %FROM%. Convert it to %TO%.",
+	"A quantity is recorded as %AMOUNT% %FROM%. Express the same quantity in %TO%.",
+	"A reading shows %AMOUNT% %FROM%. What does that equal in %TO%?",
+	"A measurement was taken in %FROM% and came out to %AMOUNT%. What is it in %TO%?",
+	"A result is labeled %AMOUNT% %FROM%. Translate it to %TO%.",
+	"A note lists %AMOUNT% %FROM%. Rewrite it in %TO%.",
+	"A number is reported in %FROM% as %AMOUNT%. Change it to %TO%.",
+	"A measurement uses %FROM%: %AMOUNT%. Convert to %TO%.",
+	"A value appears as %AMOUNT% %FROM% in a table. Convert that entry to %TO%.",
+	"Two sources use different units: one gives %AMOUNT% %FROM%. State the equivalent in %TO%.",
+	"A quantity must be compared with others listed in %TO%, but it is %AMOUNT% %FROM%. Convert it.",
+	"A calculation requires the value in %TO% even though it is provided as %AMOUNT% %FROM%. Convert it.",
+	"A report standardizes everything to %TO%, but one line is %AMOUNT% %FROM%. Convert that line.",
+	"A dataset mixes units; one record is %AMOUNT% %FROM%. Rewrite it in %TO%.",
+	"A measurement is stored in %FROM% as %AMOUNT% but needs to be displayed in %TO%. Convert it.",
+	"A chart axis is in %TO%, but a data point is listed as %AMOUNT% %FROM%. Convert the data point.",
+	"A system expects %TO%, yet the available reading is %AMOUNT% %FROM%. Find the equivalent in %TO%.",
+	"A reference value is provided as %AMOUNT% %FROM%. Convert it so it matches units of %TO%.",
+	"A specification sheet lists %AMOUNT% %FROM%. Re-express it in %TO% for consistency.",
+	"A conversion is needed before combining quantities: one term is %AMOUNT% %FROM%. Convert it to %TO%.",
+	"Before substituting into an equation written in %TO%, convert the given %AMOUNT% %FROM% to %TO%.",
+	"An analysis step requires the quantity in %TO% to avoid unit mismatch; it is currently %AMOUNT% %FROM%. Convert it.",
+	"A cross-check uses %TO% units, but the recorded value is %AMOUNT% %FROM%. Determine the equivalent in %TO%.",
+	"A workflow enforces %TO% as the canonical unit; an input arrives as %AMOUNT% %FROM%. Convert the input.",
+	"A conversion must be applied prior to aggregation: translate %AMOUNT% %FROM% into %TO%.",
+	"A unit-consistency check flags %AMOUNT% %FROM% because the model uses %TO%. Convert it to %TO%.",
+	"A validation step compares values in %TO%, but one measurement is %AMOUNT% %FROM%. Convert it for the comparison.",
+	"A pipeline requires all quantities in %TO%; one file contains %AMOUNT% %FROM%. Convert that value to %TO%.",
+	"A result is correct only after unit alignment: convert %AMOUNT% %FROM% into %TO% so it can be used downstream.",
 ];
 
 const pickStem = () => questionStems[Math.floor(Math.random() * questionStems.length)];
@@ -124,7 +171,7 @@ function renderHint(fromExpr, toExpr) {
 		return;
 	}
 	const listItems = hints.map((hint) => `<li>${hint}</li>`).join("");
-	$("#hint").html(`<span class="hint-label">Hint</span><ul>${listItems}</ul>`);
+	$("#hint").html(`<ul>${listItems}</ul>`);
 }
 
 function renderQuestion(answerField) {
@@ -175,6 +222,8 @@ const answerField = mathQuillInterface.MathField(document.getElementById("answer
 	},
 });
 
+const focusAnswer = () => answerField.focus();
+
 $(document).on("keydown", "#answerMQ textarea", function (e) {
 	if (e.key === "+" || e.key === "\\" || e.key === "_" || e.key === "=") {
 		e.preventDefault();
@@ -205,4 +254,30 @@ $("#submit").on("click", () => {
 });
 
 $("#next").on("click", () => renderQuestion(answerField));
+
+$(".control-btn").on("click", (e) => {
+	const action = $(e.currentTarget).data("action");
+	switch (action) {
+		case "left":
+			answerField.keystroke("Left");
+			break;
+		case "right":
+			answerField.keystroke("Right");
+			break;
+		case "backspace":
+			answerField.keystroke("Backspace");
+			break;
+		case "fraction":
+			answerField.cmd("\\frac");
+			break;
+		case "exponent":
+			answerField.cmd("^");
+			break;
+		default:
+			break;
+	}
+	focusAnswer();
+	updatePreview(answerField);
+});
+
 renderQuestion(answerField);

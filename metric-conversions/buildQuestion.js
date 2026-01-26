@@ -129,7 +129,12 @@ function randomUnitExpression(targetDimensions = null) {
 			usedCategories.add(choice.category);
 		}
 
-		if (numer.length === 0) numer.push(pickRandom(PREFIXES) + pickRandom(BASE_UNITS));
+		if (numer.length === 0) {
+			const base = pickRandom(BASE_UNITS);
+			const baseDef = UNIT_DEFINITIONS[base];
+			const prefix = baseDef.allowPrefix ? pickRandom(PREFIXES) : "";
+			numer.push(`${prefix}${base}`);
+		}
 
 		let expression = numer.join("*");
 		if (denom.length > 0) expression += `/${denom.join("*")}`;
@@ -217,7 +222,7 @@ const randomAmount = () => {
 		const n = numerator / divisor;
 		const d = denominator / divisor;
 		const value = n / d;
-		if (!(n === d)) {
+		if (!(n === d) && d !== 1) {
 			return {
 				value,
 				plain: `${n}/${d}`,
