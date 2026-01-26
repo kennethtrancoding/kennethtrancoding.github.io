@@ -169,6 +169,7 @@ const scanUnitToken = (text, startIndex) => {
 };
 
 const pluralizeUnitName = (name, unitDef) => {
+	if (unitDef?.plural) return unitDef.plural;
 	if (unitDef?.invariantPlural) return name;
 	if (name.startsWith("degree ")) return name.replace("degree ", "degrees ");
 	if (name.endsWith("y")) return `${name.slice(0, -1)}ies`;
@@ -190,6 +191,7 @@ export function parseUnits(expression) {
 	const parts = sanitized.split("/");
 	let hasOffsetUnit = false;
 	let offsetToBase = 0;
+	const baseUnitsUsed = new Set();
 
 	for (const [index, part] of parts.entries()) {
 		const sign = index ? -1 : 1;
@@ -235,6 +237,7 @@ export function parseUnits(expression) {
 					unit.allowPrefix === false && prefixSymbol ? "" : prefixSymbol;
 
 				factor *= Math.pow(unit.factor * prefixMultiplier, exponent);
+				baseUnitsUsed.add(resolvedKey);
 
 				for (const [dimensionKey, value] of Object.entries(unit.dim)) {
 					dimension[dimensionKey] = (dimension[dimensionKey] || 0) + value * exponent;
@@ -253,6 +256,7 @@ export function parseUnits(expression) {
 		normalized: normalizedParts.join(""),
 		hasOffset: hasOffsetUnit,
 		offset: offsetToBase,
+		bases: [...baseUnitsUsed],
 	};
 }
 

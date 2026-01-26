@@ -9,13 +9,22 @@ import {
 	parseAnswer,
 	convertValue,
 	UNIT_TOKENS,
+	parseUnits,
 } from "./parse.js";
 import { buildQuestion } from "./buildQuestion.js";
+import { UNIT_DEFINITIONS } from "./units.js";
 
 let currentQuestion = null;
 
 const setMessage = (text, cssClass = "") =>
 	$("#msg").removeClass("err ok").addClass(cssClass).text(text);
+
+const setPreview = (content, { asHtml = false, isError = false } = {}) => {
+	const el = $("#preview");
+	el.toggleClass("err", !!isError);
+	if (!content) return el.text("");
+	return asHtml ? el.html(content) : el.text(content);
+};
 
 const plainUnitOptions = {
 	pluralizeNumerator: true,
@@ -26,29 +35,27 @@ const colorLatex = (content) => `\\color{${UNIT_ACCENT_COLOR}}{${content}}`;
 
 const questionStems = [
 	"Convert %AMOUNT% %FROM% to %TO%.",
+	"Change %AMOUNT% %FROM% into %TO%.",
+	"Express %AMOUNT% %FROM% in %TO%.",
+	"Write %AMOUNT% %FROM% as %TO%.",
+	"Give the equivalent of %AMOUNT% %FROM% in %TO%.",
+	"What is %AMOUNT% %FROM% in %TO%?",
 	"How many %TO% are in %AMOUNT% %FROM%?",
 	"What is %AMOUNT% %FROM% expressed in %TO%?",
-	"Change %AMOUNT% %FROM% into %TO%.",
-	"Please convert %AMOUNT% %FROM% into %TO%.",
 	"Translate %AMOUNT% %FROM% to %TO%.",
-	"Calculate the equivalent of %AMOUNT% %FROM% in %TO%.",
-	"What's the %TO% value for %AMOUNT% %FROM%?",
-	"Express %AMOUNT% %FROM% as %TO%.",
-	"Convert an amount of %AMOUNT% %FROM% to %TO%.",
-	"I have %AMOUNT% %FROM%—how much is that in %TO%?",
-	"Turn %AMOUNT% %FROM% into %TO% units.",
-	"Give me %AMOUNT% %FROM% in %TO%.",
-	"How do I represent %AMOUNT% %FROM% using %TO%?",
-	"Find the %TO% equivalent for %AMOUNT% %FROM%.",
-	"What does %AMOUNT% %FROM% become in %TO%?",
-	"If I start with %AMOUNT% %FROM%, what is that in %TO%?",
-	"Re-express %AMOUNT% %FROM% in %TO%.",
-	"Convert from %FROM% to %TO%: %AMOUNT%.",
-	"Compute %AMOUNT% %FROM% → %TO%.",
+	"Re-express %AMOUNT% %FROM% using %TO%.",
+	"Find the %TO% value corresponding to %AMOUNT% %FROM%.",
+	"Compute the %TO% equivalent of %AMOUNT% %FROM%.",
+	"Convert from %FROM% to %TO% for %AMOUNT%.",
+	"If you start with %AMOUNT% %FROM%, what amount is that in %TO%?",
+	"Determine the equivalent amount in %TO% for %AMOUNT% %FROM%.",
+	"Evaluate %AMOUNT% %FROM% in terms of %TO%.",
+	"Represent %AMOUNT% %FROM% in the unit %TO%.",
 	"How much %TO% corresponds to %AMOUNT% %FROM%?",
-	"What's %AMOUNT% %FROM% when measured in %TO%?",
-	"Provide the conversion of %AMOUNT% %FROM% into %TO%.",
-	"I need %AMOUNT% %FROM% converted to %TO%.",
+	"What quantity in %TO% matches %AMOUNT% %FROM%?",
+	"Convert the quantity %AMOUNT% %FROM% so it is measured in %TO%.",
+	"Rewrite %AMOUNT% %FROM% so the result is in %TO%.",
+	"Find the conversion result when %AMOUNT% %FROM% is expressed as %TO%.",
 ];
 
 const pickStem = () => questionStems[Math.floor(Math.random() * questionStems.length)];
@@ -59,10 +66,10 @@ function updatePreview(answerField) {
 	try {
 		// Show a human-friendly unit string while the user types; bail out on any parse issues.
 		const raw = answerField.latex();
-		if (!raw) return $("#preview").text("");
+		if (!raw) return setPreview("");
 		const cleaned = cleanExpression(raw);
 		const tokens = tokenize(cleaned);
-		if (tokens.error) return $("#preview").text("");
+		if (tokens.error) return setPreview("Invalid input—check your syntax!", { isError: true });
 		const list = tokens.tokens || [];
 		let rebuilt = "";
 		let prevType = null;
@@ -88,10 +95,10 @@ function updatePreview(answerField) {
 			.replace(/([0-9)])(?=[A-Za-zµ])/g, "$1 ")
 			.replace(/\s+/g, " ")
 			.trim();
-		$("#preview").html(spaced);
+		setPreview(spaced, { asHtml: true });
 	} catch (e) {
 		console.warn("Preview rendering failed", e);
-		$("#preview").text("");
+		setPreview("Invalid input—check your syntax!", { isError: true });
 	}
 }
 
@@ -99,6 +106,25 @@ function refreshMath() {
 	if (typeof MathJax === "undefined") return;
 	if (typeof MathJax.typesetPromise === "function") MathJax.typesetPromise();
 	else if (typeof MathJax.typeset === "function") MathJax.typeset();
+}
+
+function renderHint(fromExpr, toExpr) {
+	const bases = new Set();
+	[fromExpr, toExpr].forEach((expr) => {
+		const parsed = parseUnits(expr);
+		if (parsed?.bases) parsed.bases.forEach((b) => bases.add(b));
+	});
+	const hints = [];
+	bases.forEach((base) => {
+		const hint = UNIT_DEFINITIONS[base]?.hint;
+		if (hint) hints.push(hint);
+	});
+	if (!hints.length) {
+		$("#hint").html("");
+		return;
+	}
+	const listItems = hints.map((hint) => `<li>${hint}</li>`).join("");
+	$("#hint").html(`<span class="hint-label">Hint</span><ul>${listItems}</ul>`);
 }
 
 function renderQuestion(answerField) {
@@ -110,23 +136,25 @@ function renderQuestion(answerField) {
 		toPlainUnits(expr, plainUnitOptions).replace(/\*/g, " * ").replace(/\s+/g, " ").trim();
 	const plainFrom = formatPlainUnits(currentQuestion.fromUnit);
 	const plainTo = formatPlainUnits(currentQuestion.toUnit);
-	const latexAmount = `\\(${colorLatex(currentQuestion.amount)}\\)`;
 	const latexFrom = `\\(${colorLatex(toLatexUnits(currentQuestion.fromUnit))}\\)`;
 	const latexTo = `\\(${colorLatex(toLatexUnits(currentQuestion.toUnit))}\\)`;
+	const amountPlain = currentQuestion.amountDisplay || currentQuestion.amountValue || "";
+	const amountLatex = `\\(${currentQuestion.amountLatex || amountPlain}\\)`;
 
 	const latexStem = fillStem(stemTemplate, {
-		AMOUNT: latexAmount,
+		AMOUNT: amountLatex,
 		FROM: latexFrom,
 		TO: latexTo,
 	});
 	const plainStem = fillStem(stemTemplate, {
-		AMOUNT: currentQuestion.amount,
+		AMOUNT: amountPlain,
 		FROM: `<strong>${plainFrom}</strong>`,
 		TO: `<strong>${plainTo}</strong>`,
 	});
 
 	$("#question").html(latexStem);
 	$("#full").html(plainStem);
+	renderHint(currentQuestion.fromUnit, currentQuestion.toUnit);
 	setMessage("");
 	answerField.latex("");
 	updatePreview(answerField);
