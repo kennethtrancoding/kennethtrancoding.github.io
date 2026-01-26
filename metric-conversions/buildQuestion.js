@@ -1,12 +1,6 @@
 // Random question generator. Creates two dimensionally-matching unit expressions and
 // a random magnitude, while avoiding awkward combinations (overlapping dims, offsets).
-import {
-	UNIT_DEFINITIONS,
-	BASE_UNITS,
-	ALL_UNIT_SYMBOLS,
-	UNIT_ALIASES,
-	PREFIXES,
-} from "./units.js";
+import { UNIT_DEFINITIONS, BASE_UNITS, ALL_UNIT_SYMBOLS, UNIT_ALIASES, PREFIXES } from "./units.js";
 import { parseUnits, dimensionsEqual, convertValue, hasDimOverlapAcrossSides } from "./parse.js";
 
 const resolveUnitKey = (symbol) => {
@@ -204,6 +198,64 @@ const unitPattern = () => {
 	return `(${prefixPattern}|)(${ALL_UNIT_SYMBOLS.join("|")})(\\^-?\\d+)?`;
 };
 
+const gcd = (a, b) => {
+	let x = Math.abs(a);
+	let y = Math.abs(b);
+	while (y) {
+		[x, y] = [y, x % y];
+	}
+	return x || 1;
+};
+
+const randomAmount = () => {
+	const mode = pickRandom(["number", "decimal", "fraction", "scientific"]);
+
+	if (mode === "fraction") {
+		const numerator = Math.floor(Math.random() * 19) + 2; // 2–20
+		const denominator = Math.floor(Math.random() * 10) + 2; // 2–11
+		const divisor = gcd(numerator, denominator);
+		const n = numerator / divisor;
+		const d = denominator / divisor;
+		const value = n / d;
+		if (!(n === d)) {
+			return {
+				value,
+				plain: `${n}/${d}`,
+				latex: `{${n}}/{${d}}`,
+			};
+		}
+		mode = "number";
+	}
+
+	if (mode === "scientific") {
+		const mantissa = +(Math.random() * 8 + 1).toFixed(2); // 1.00–9.00
+		const exponent = pickRandom([-6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6]);
+		const value = mantissa * 10 ** exponent;
+		return {
+			value,
+			plain: `${mantissa}e${exponent}`,
+			latex: `${mantissa}\\times 10^{${exponent}}`,
+		};
+	}
+
+	if (mode === "number") {
+		const value = Math.floor(Math.random() * 998 + 1);
+		return {
+			value,
+			plain: `${value}`,
+			latex: `${value}`,
+		};
+	}
+
+	// decimal
+	const value = +(Math.random() * 900 + 10).toFixed(2);
+	return {
+		value,
+		plain: `${value}`,
+		latex: `${value}`,
+	};
+};
+
 export function buildQuestion() {
 	let fromUnit;
 	let toUnit;
@@ -290,11 +342,13 @@ export function buildQuestion() {
 		}
 	}
 
-	const amount = +(Math.random() * 900 + 10).toFixed(2);
+	const amount = randomAmount();
 	return {
-		amount,
+		amountValue: amount.value,
+		amountDisplay: amount.plain,
+		amountLatex: amount.latex,
 		fromUnit,
 		toUnit,
-		expected: convertValue(amount, fromUnit, toUnit).value,
+		expected: convertValue(amount.value, fromUnit, toUnit).value,
 	};
 }
