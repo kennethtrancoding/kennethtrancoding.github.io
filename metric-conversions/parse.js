@@ -14,13 +14,42 @@ const resolveUnitKey = (symbol) => {
 	return alias ? alias[1] : symbol;
 };
 const unitSymbols = ALL_UNIT_SYMBOLS.join("");
+const sortedPrefixes = PREFIXES.filter(Boolean).sort((a, b) => b.length - a.length);
+const sortedUnits = ALL_UNIT_SYMBOLS.slice().sort((a, b) => b.length - a.length);
+const getUnitDefinition = (symbol) => UNIT_DEFINITIONS[resolveUnitKey(symbol)];
 const getUnitName = (symbol) => {
-	const key = resolveUnitKey(symbol);
-	return UNIT_DEFINITIONS[key]?.name || symbol;
+	const def = getUnitDefinition(symbol);
+	return def?.name || symbol;
 };
 
-const normalizeMicro = (expression) =>
-	expression.replace(new RegExp(`\\bu(?=[${unitSymbols}])`, "g"), "µ");
+const normalizeMicro = (expression) => {
+	let out = "";
+	let i = 0;
+	const len = expression.length;
+	while (i < len) {
+		const ch = expression[i];
+		const prev = i === 0 ? "" : expression[i - 1];
+		const canBePrefix = i === 0 || /[^A-Za-z0-9]/.test(prev);
+
+		if (ch === "u" && canBePrefix) {
+			const rest = expression.slice(i + 1);
+			const prefixedBase = sortedUnits.find((sym) => {
+				if (!rest.startsWith(sym)) return false;
+				const def = getUnitDefinition(sym);
+				return def?.allowPrefix !== false;
+			});
+			if (prefixedBase) {
+				out += "µ";
+				i++;
+				continue;
+			}
+		}
+
+		out += ch;
+		i++;
+	}
+	return out;
+};
 
 function expandFractions(expr) {
 	// Replace LaTeX \frac{a}{b} with (a)/(b) so the rest of the parser can stay simple.
@@ -102,6 +131,52 @@ const prefixPattern = PREFIXES.filter(Boolean)
 	.join("|");
 const unitPattern = `(${prefixPattern}|)(${ALL_UNIT_SYMBOLS.join("|")})(\\^-?\\d+)?`;
 const unitRegex = () => new RegExp(unitPattern, "g");
+const exponentRegex = /^\^-?\d+/;
+
+const matchUnitAt = (text, startIndex) => {
+	let best = null;
+
+	for (const base of sortedUnits) {
+		if (!text.startsWith(base, startIndex)) continue;
+		best = { prefix: "", base, def: getUnitDefinition(base), length: base.length };
+		break;
+	}
+
+	for (const prefix of sortedPrefixes) {
+		if (!text.startsWith(prefix, startIndex)) continue;
+		const afterPrefix = startIndex + prefix.length;
+		for (const base of sortedUnits) {
+			if (!text.startsWith(base, afterPrefix)) continue;
+			const def = getUnitDefinition(base);
+			if (def?.allowPrefix === false) continue;
+			const totalLength = prefix.length + base.length;
+			if (!best || totalLength > best.length)
+				best = { prefix, base, def, length: totalLength };
+			break;
+		}
+	}
+
+	return best;
+};
+
+const scanUnitToken = (text, startIndex) => {
+	const unitMatch = matchUnitAt(text, startIndex);
+	if (!unitMatch) return null;
+	const exponentMatch = exponentRegex.exec(text.slice(startIndex + unitMatch.length));
+	const rawExponent = exponentMatch ? exponentMatch[0] : "";
+	const consumed = unitMatch.length + rawExponent.length;
+	return { ...unitMatch, rawExponent, consumed };
+};
+
+const pluralizeUnitName = (name, unitDef) => {
+	if (unitDef?.invariantPlural) return name;
+	if (name.startsWith("degree ")) return name.replace("degree ", "degrees ");
+	if (name.endsWith("y")) return `${name.slice(0, -1)}ies`;
+	if (name.endsWith("s")) return name;
+	return `${name}s`;
+};
+
+const singularizeUnitName = (name) => name;
 
 export function parseUnits(expression) {
 	// Normalize a unit expression (prefixes, exponents, numerator/denominator) into
@@ -126,16 +201,13 @@ export function parseUnits(expression) {
 
 		const normalizedSegments = [];
 		for (const segment of segments) {
-			const regex = unitRegex();
-			let lastIndex = 0;
-			let match;
+			let cursor = 0;
+			while (cursor < segment.length) {
+				const token = scanUnitToken(segment, cursor);
+				if (!token || token.consumed === 0)
+					return { error: `Invalid unit syntax near "${segment.slice(cursor)}"` };
 
-			while ((match = regex.exec(segment)) !== null) {
-				if (match.index !== lastIndex)
-					return {
-						error: `Invalid unit syntax near "${segment.slice(lastIndex)}"`,
-					};
-				const [, prefixSymbol = "", base, rawExponent = ""] = match;
+				const { prefix: prefixSymbol, base, rawExponent } = token;
 				const resolvedKey = resolveUnitKey(base);
 				const unit = UNIT_DEFINITIONS[resolvedKey];
 				if (!unit) return { error: `Unrecognized base unit: ${base}` };
@@ -169,12 +241,8 @@ export function parseUnits(expression) {
 					if (!dimension[dimensionKey]) delete dimension[dimensionKey];
 				}
 				normalizedSegments.push(`${normalizedPrefix}${resolvedKey}${rawExponent || ""}`);
-				lastIndex = regex.lastIndex;
+				cursor += token.consumed;
 			}
-			if (lastIndex !== segment.length)
-				return {
-					error: `Invalid unit syntax near "${segment.slice(lastIndex)}"`,
-				};
 		}
 		const combined = normalizedSegments.join("*");
 		normalizedParts.push(index ? `/${combined}` : combined);
@@ -191,19 +259,25 @@ export function parseUnits(expression) {
 export function toLatexUnits(expression) {
 	const parts = cleanExpression(expression).split("/");
 	const formatPart = (part) => {
-		const regex = unitRegex();
 		let out = "";
-		let last = 0;
-		let match;
-		while ((match = regex.exec(part)) !== null) {
-			out += part.slice(last, match.index).replace(/\*/g, "\\,");
-			const [, prefixSymbol, base, rawExponent = ""] = match;
-			const displayPrefix = prefixSymbol === "u" ? "µ" : prefixSymbol;
-			const exponent = rawExponent ? `^{${rawExponent.slice(1)}}` : "";
-			out += `\\mathrm{${displayPrefix}${base}}${exponent}`;
-			last = regex.lastIndex;
+		let cursor = 0;
+		while (cursor < part.length) {
+			const ch = part[cursor];
+			if (ch === "*") {
+				out += "\\,";
+				cursor++;
+				continue;
+			}
+			const token = scanUnitToken(part, cursor);
+			if (!token) {
+				out += part.slice(cursor).replace(/\*/g, "\\,");
+				break;
+			}
+			const prefixSymbol = token.prefix === "u" ? "µ" : token.prefix;
+			const exponent = token.rawExponent ? `^{${token.rawExponent.slice(1)}}` : "";
+			out += `\\mathrm{${prefixSymbol}${token.base}}${exponent}`;
+			cursor += token.consumed;
 		}
-		out += part.slice(last).replace(/\*/g, "\\,");
 		return out || part;
 	};
 
@@ -215,31 +289,73 @@ export function toLatexUnits(expression) {
 	return acc;
 }
 
-export function toPlainUnits(expression) {
+export function toPlainUnits(expression, options = {}) {
+	const {
+		pluralizeNumerator = false,
+		singularizeDenominator = false,
+		wrapFractions = true,
+		wrapUnitsWith = null,
+	} = options;
 	const parts = cleanExpression(expression).split("/");
-	const formatPart = (part) => {
-		const regex = unitRegex();
+	const formatPart = (part, isDenominator = false) => {
 		let out = "";
-		let last = 0;
-		let match;
-		while ((match = regex.exec(part)) !== null) {
-			out += part.slice(last, match.index).replace(/\*/g, " ");
-			const [, prefixSymbol, base, rawExponent = ""] = match;
+		let cursor = 0;
+		const numberPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/;
+		while (cursor < part.length) {
+			const ch = part[cursor];
+			if (ch === "*") {
+				out += "*";
+				cursor++;
+				continue;
+			}
+			if (ch === "(" || ch === ")") {
+				cursor++;
+				continue;
+			}
+			const numberMatch = part.slice(cursor).match(numberPattern);
+			if (numberMatch) {
+				out += numberMatch[0];
+				cursor += numberMatch[0].length;
+				continue;
+			}
+			const token = scanUnitToken(part, cursor);
+			if (!token || token.consumed === 0) return part;
+
+			const prefixSymbol = token.prefix;
+			const base = token.base;
+			const rawExponent = token.rawExponent;
 			const prefixText = PREFIX_NAMES[prefixSymbol] || prefixSymbol;
-			const baseName = getUnitName(base);
+			const unitDef = getUnitDefinition(base);
+			const baseName = unitDef?.name || base;
+			let adjustedName = baseName;
+			if (!isDenominator && pluralizeNumerator)
+				adjustedName = pluralizeUnitName(baseName, unitDef);
+			else if (isDenominator && singularizeDenominator)
+				adjustedName = singularizeUnitName(baseName);
 			const expo = rawExponent ? `^${rawExponent.slice(1)}` : "";
-			const piece = `${prefixText ? `${prefixText}` : ""}${baseName}${expo}`;
-			out += piece.trim();
-			last = regex.lastIndex;
+			const piece = `${prefixText ? `${prefixText}` : ""}${adjustedName}${expo}`.trim();
+			const wrapped = typeof wrapUnitsWith === "function" ? wrapUnitsWith(piece) : piece;
+			out += wrapped;
+			cursor += token.consumed;
 		}
-		out += part.slice(last).replace(/\*/g, " ");
+		const sanitized = part.replace(/[()]/g, "").trim();
+		if (!out && !sanitized) return "";
 		return out || part;
 	};
 
-	if (parts.length === 1) return formatPart(parts[0]);
+	if (parts.length === 1) return formatPart(parts[0], false);
 	const [first, ...rest] = parts;
-	let acc = `(${formatPart(first)})`;
-	for (const part of rest) acc = `${acc} per (${formatPart(part)})`;
+	const wrap = (s) => {
+		if (!wrapFractions) return s;
+		if (!s) return "";
+		return `(${s})`;
+	};
+	let acc = wrap(formatPart(first, false));
+	for (const part of rest) {
+		const formatted = wrap(formatPart(part, true));
+		if (!formatted) continue;
+		acc = acc ? `${acc} per ${formatted}` : `per ${formatted}`;
+	}
 	return acc;
 }
 
@@ -265,12 +381,10 @@ export function tokenize(expression) {
 	const input = cleanExpression(expression);
 	const tokens = [];
 	const numberPattern = /[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/y;
-	const unitPatternSticky = new RegExp(unitPattern, "y");
 
 	let index = 0;
 	while (index < input.length) {
 		numberPattern.lastIndex = index;
-		unitPatternSticky.lastIndex = index;
 		const prev = tokens[tokens.length - 1];
 		const canTakeSignedNumber =
 			!prev || prev.type === "operator" || (prev.type === "paren" && prev.value === "(");
@@ -282,10 +396,10 @@ export function tokenize(expression) {
 			continue;
 		}
 
-		const unitMatch = unitPatternSticky.exec(input);
+		const unitMatch = scanUnitToken(input, index);
 		if (unitMatch) {
-			tokens.push({ type: "unit", value: unitMatch[0] });
-			index = unitPatternSticky.lastIndex;
+			tokens.push({ type: "unit", value: input.slice(index, index + unitMatch.consumed) });
+			index += unitMatch.consumed;
 			continue;
 		}
 

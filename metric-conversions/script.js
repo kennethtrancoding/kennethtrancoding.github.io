@@ -17,6 +17,44 @@ let currentQuestion = null;
 const setMessage = (text, cssClass = "") =>
 	$("#msg").removeClass("err ok").addClass(cssClass).text(text);
 
+const plainUnitOptions = {
+	pluralizeNumerator: true,
+	singularizeDenominator: true,
+};
+const UNIT_ACCENT_COLOR = "#6161c2";
+const colorLatex = (content) => `\\color{${UNIT_ACCENT_COLOR}}{${content}}`;
+
+const questionStems = [
+	"Convert %AMOUNT% %FROM% to %TO%.",
+	"How many %TO% are in %AMOUNT% %FROM%?",
+	"What is %AMOUNT% %FROM% expressed in %TO%?",
+	"Change %AMOUNT% %FROM% into %TO%.",
+	"Please convert %AMOUNT% %FROM% into %TO%.",
+	"Translate %AMOUNT% %FROM% to %TO%.",
+	"Calculate the equivalent of %AMOUNT% %FROM% in %TO%.",
+	"What's the %TO% value for %AMOUNT% %FROM%?",
+	"Express %AMOUNT% %FROM% as %TO%.",
+	"Convert an amount of %AMOUNT% %FROM% to %TO%.",
+	"I have %AMOUNT% %FROM%—how much is that in %TO%?",
+	"Turn %AMOUNT% %FROM% into %TO% units.",
+	"Give me %AMOUNT% %FROM% in %TO%.",
+	"How do I represent %AMOUNT% %FROM% using %TO%?",
+	"Find the %TO% equivalent for %AMOUNT% %FROM%.",
+	"What does %AMOUNT% %FROM% become in %TO%?",
+	"If I start with %AMOUNT% %FROM%, what is that in %TO%?",
+	"Re-express %AMOUNT% %FROM% in %TO%.",
+	"Convert from %FROM% to %TO%: %AMOUNT%.",
+	"Compute %AMOUNT% %FROM% → %TO%.",
+	"How much %TO% corresponds to %AMOUNT% %FROM%?",
+	"What's %AMOUNT% %FROM% when measured in %TO%?",
+	"Provide the conversion of %AMOUNT% %FROM% into %TO%.",
+	"I need %AMOUNT% %FROM% converted to %TO%.",
+];
+
+const pickStem = () => questionStems[Math.floor(Math.random() * questionStems.length)];
+const fillStem = (stem, replacements) =>
+	stem.replace(/%([A-Z]+)%/g, (m, key) => (key in replacements ? replacements[key] : m));
+
 function updatePreview(answerField) {
 	try {
 		// Show a human-friendly unit string while the user types; bail out on any parse issues.
@@ -40,13 +78,17 @@ function updatePreview(answerField) {
 			rebuilt += tok.value;
 			prevType = isCloseParen ? "closeParen" : tok.type;
 		}
-		const plain = toPlainUnits(rebuilt);
-		const withoutParens = plain.replace(/[()]/g, "");
-		const spaced = withoutParens
+		const coloredPlain = toPlainUnits(rebuilt, {
+			...plainUnitOptions,
+			wrapUnitsWith: (text) => `<span class="unit-accent">${text}</span>`,
+		});
+		const spaced = coloredPlain
+			.replace(/\*/g, " * ")
+			.replace(/([0-9)])(?=<span)/g, "$1 ")
 			.replace(/([0-9)])(?=[A-Za-zµ])/g, "$1 ")
 			.replace(/\s+/g, " ")
 			.trim();
-		$("#preview").text(spaced);
+		$("#preview").html(spaced);
 	} catch (e) {
 		console.warn("Preview rendering failed", e);
 		$("#preview").text("");
@@ -62,15 +104,32 @@ function refreshMath() {
 function renderQuestion(answerField) {
 	currentQuestion = buildQuestion();
 
-	// Render LaTeX and plain-English versions of the prompt.
-	$("#question").html(
-		`Convert \\(${currentQuestion.amount}\\,${toLatexUnits(currentQuestion.fromUnit)}\\) to \\(${toLatexUnits(currentQuestion.toUnit)}\\).`,
-	);
-	const plainFrom = toPlainUnits(currentQuestion.fromUnit);
-	const plainTo = toPlainUnits(currentQuestion.toUnit);
-	$("#full").html(
-		`Convert <strong>${currentQuestion.amount} ${plainFrom}</strong> to <strong>${plainTo}</strong>.`,
-	);
+	// Render LaTeX and plain-English versions of the prompt using a shared stem.
+	const stemTemplate = pickStem();
+	const formatPlainUnits = (expr) =>
+		toPlainUnits(expr, plainUnitOptions)
+			.replace(/\*/g, " * ")
+			.replace(/\s+/g, " ")
+			.trim();
+	const plainFrom = formatPlainUnits(currentQuestion.fromUnit);
+	const plainTo = formatPlainUnits(currentQuestion.toUnit);
+	const latexAmount = `\\(${colorLatex(currentQuestion.amount)}\\)`;
+	const latexFrom = `\\(${colorLatex(toLatexUnits(currentQuestion.fromUnit))}\\)`;
+	const latexTo = `\\(${colorLatex(toLatexUnits(currentQuestion.toUnit))}\\)`;
+
+	const latexStem = fillStem(stemTemplate, {
+		AMOUNT: latexAmount,
+		FROM: latexFrom,
+		TO: latexTo,
+	});
+	const plainStem = fillStem(stemTemplate, {
+		AMOUNT: `<strong>${currentQuestion.amount}</strong>`,
+		FROM: `<strong>${plainFrom}</strong>`,
+		TO: `<strong>${plainTo}</strong>`,
+	});
+
+	$("#question").html(latexStem);
+	$("#full").html(plainStem);
 	setMessage("");
 	answerField.latex("");
 	updatePreview(answerField);
