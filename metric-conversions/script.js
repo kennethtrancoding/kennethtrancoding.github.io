@@ -107,10 +107,7 @@ function renderQuestion(answerField) {
 	// Render LaTeX and plain-English versions of the prompt using a shared stem.
 	const stemTemplate = pickStem();
 	const formatPlainUnits = (expr) =>
-		toPlainUnits(expr, plainUnitOptions)
-			.replace(/\*/g, " * ")
-			.replace(/\s+/g, " ")
-			.trim();
+		toPlainUnits(expr, plainUnitOptions).replace(/\*/g, " * ").replace(/\s+/g, " ").trim();
 	const plainFrom = formatPlainUnits(currentQuestion.fromUnit);
 	const plainTo = formatPlainUnits(currentQuestion.toUnit);
 	const latexAmount = `\\(${colorLatex(currentQuestion.amount)}\\)`;
@@ -123,7 +120,7 @@ function renderQuestion(answerField) {
 		TO: latexTo,
 	});
 	const plainStem = fillStem(stemTemplate, {
-		AMOUNT: `<strong>${currentQuestion.amount}</strong>`,
+		AMOUNT: currentQuestion.amount,
 		FROM: `<strong>${plainFrom}</strong>`,
 		TO: `<strong>${plainTo}</strong>`,
 	});
