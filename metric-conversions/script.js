@@ -2,9 +2,16 @@
 // conversion question, live-previewing typed units, parsing the MathQuill input,
 // and validating the submitted answer.
 import { toPlainUnits, toLatexUnits } from "./parse-display.js";
-import { cleanExpression, tokenize, parseAnswer, convertValue, UNIT_TOKENS, parseUnits } from "./parse.js";
+import {
+	cleanExpression,
+	tokenize,
+	parseAnswer,
+	convertValue,
+	UNIT_TOKENS,
+	parseUnits,
+} from "./parse.js";
 import { buildQuestion } from "./buildQuestion.js";
-import { UNIT_DEFINITIONS } from "./units.js";
+import { NAMED_UNITS } from "./units.js";
 
 let currentQuestion = null;
 
@@ -163,7 +170,7 @@ function renderHint(fromExpr, toExpr) {
 	});
 	const hints = [];
 	bases.forEach((base) => {
-		const hint = UNIT_DEFINITIONS[base]?.hint;
+		const hint = NAMED_UNITS[base]?.hint;
 		if (hint) hints.push(hint);
 	});
 	if (!hints.length) {

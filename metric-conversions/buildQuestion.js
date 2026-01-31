@@ -1,7 +1,37 @@
 // Random question generator. Creates two dimensionally-matching unit expressions and
 // a random magnitude, while avoiding awkward combinations (overlapping dims, offsets).
-import { UNIT_DEFINITIONS, BASE_UNITS, ALL_UNIT_SYMBOLS, UNIT_ALIASES, PREFIXES } from "./units.js";
+import { NAMED_UNITS, BASE_UNITS, ALL_UNIT_SYMBOLS, UNIT_ALIASES, PREFIXES } from "./units.js";
 import { parseUnits, dimensionsEqual, convertValue, hasDimOverlapAcrossSides } from "./parse.js";
+
+const QUESTION_TYPES = {
+	prefixConversion: () => {
+		const base = pickRandom(BASE_UNITS.filter((u) => NAMED_UNITS[u].allowPrefix !== false));
+		const fromPrefix = pickRandom(PREFIXES);
+		let toPrefix;
+		do {
+			toPrefix = pickRandom(PREFIXES);
+		} while (toPrefix === fromPrefix);
+
+		const fromUnit = `${fromPrefix}${base}`;
+		const toUnit = `${toPrefix}${base}`;
+		const amount = randomAmount();
+
+		return {
+			amountValue: amount.value,
+			amountDisplay: amount.plain,
+			amountLatex: amount.latex,
+			fromUnit,
+			toUnit,
+			expected: convertValue(amount.value, fromUnit, toUnit).value,
+		};
+	},
+	definition: () => {
+		const base = pickRandom(BASE_UNITS);
+		const basePrefix = pickRandom(PREFIXES);
+		const unitDef = NAMED_UNITS[base].dim;
+		const amount = randomAmount();
+	},
+};
 
 const resolveUnitKey = (symbol) => {
 	const alias = UNIT_ALIASES.find(([alias]) => alias === symbol);
@@ -19,7 +49,7 @@ const CATEGORY_SIGNATURES = {
 	radiation: [],
 };
 
-const getUnitCategory = (key) => UNIT_DEFINITIONS[key]?.category || "mechanical";
+const getUnitCategory = (key) => NAMED_UNITS[key]?.category || "mechanical";
 const isSimpleDimension = (dim) => Object.keys(dim).every((k) => SIMPLE_DIM_KEYS.has(k));
 const hasSignatureForCategory = (dim, category) => {
 	const sigs = CATEGORY_SIGNATURES[category];
@@ -32,7 +62,7 @@ const pickRandom = (array) => array[Math.floor(Math.random() * array.length)];
 
 function randomUnit(basePool = BASE_UNITS) {
 	const base = pickRandom(basePool);
-	const baseDef = UNIT_DEFINITIONS[base];
+	const baseDef = NAMED_UNITS[base];
 	const prefix = baseDef.allowPrefix ? pickRandom(PREFIXES) : "";
 	const exponent = Math.floor(Math.random() * 5) - 2;
 	const unitSymbol = `${prefix}${base}`;
@@ -131,7 +161,7 @@ function randomUnitExpression(targetDimensions = null) {
 
 		if (numer.length === 0) {
 			const base = pickRandom(BASE_UNITS);
-			const baseDef = UNIT_DEFINITIONS[base];
+			const baseDef = NAMED_UNITS[base];
 			const prefix = baseDef.allowPrefix ? pickRandom(PREFIXES) : "";
 			numer.push(`${prefix}${base}`);
 		}
@@ -163,7 +193,7 @@ function randomUnitExpression(targetDimensions = null) {
 
 	if (targetDim) {
 		const matchingBase = BASE_UNITS.filter((unit) =>
-			dimensionsEqual(UNIT_DEFINITIONS[unit].dim, targetDim),
+			dimensionsEqual(NAMED_UNITS[unit].dim, targetDim),
 		);
 		if (matchingBase.length) return pickRandom(matchingBase);
 		console.log("Failed to match requested dimensions, falling back to random unit.");
@@ -182,7 +212,7 @@ function remapPrefixes(expression) {
 	while ((match = regex.exec(expression)) !== null) {
 		changed += expression.slice(lastIndex, match.index);
 		const [, , base, rawExponent = ""] = match;
-		const unit = UNIT_DEFINITIONS[resolveUnitKey(base)];
+		const unit = NAMED_UNITS[resolveUnitKey(base)];
 		let newPrefix = "";
 		if (unit.allowPrefix !== false) {
 			do {
@@ -316,10 +346,8 @@ export function buildQuestion() {
 		toParsed.normalized === fromParsed.normalized
 	) {
 		const base = pickRandom(BASE_UNITS);
-		const baseDim = UNIT_DEFINITIONS[base].dim;
-		const sameDimUnits = BASE_UNITS.filter((b) =>
-			dimensionsEqual(UNIT_DEFINITIONS[b].dim, baseDim),
-		);
+		const baseDim = NAMED_UNITS[base].dim;
+		const sameDimUnits = BASE_UNITS.filter((b) => dimensionsEqual(NAMED_UNITS[b].dim, baseDim));
 		const altCandidates = sameDimUnits.filter((u) => u !== base);
 		const alt = altCandidates.length ? pickRandom(altCandidates) : base;
 		fromUnit = base;
@@ -357,3 +385,5 @@ export function buildQuestion() {
 		expected: convertValue(amount.value, fromUnit, toUnit).value,
 	};
 }
+
+console.log(QUESTION_TYPES.prefixConversion());
