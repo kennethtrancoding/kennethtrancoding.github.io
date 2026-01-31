@@ -1,7 +1,7 @@
 // Parser and evaluator for unit expressions entered in the drill. Converts MathQuill
 // LaTeX into tokens, validates dimensional consistency, and computes conversions.
 import {
-	UNIT_DEFINITIONS,
+	NAMED_UNITS,
 	ALL_UNIT_SYMBOLS,
 	UNIT_ALIASES,
 	PREFIXES,
@@ -14,7 +14,7 @@ const resolveUnitKey = (symbol) => {
 };
 const sortedPrefixes = PREFIXES.filter(Boolean).sort((a, b) => b.length - a.length);
 const sortedUnits = ALL_UNIT_SYMBOLS.slice().sort((a, b) => b.length - a.length);
-export const getUnitDefinition = (symbol) => UNIT_DEFINITIONS[resolveUnitKey(symbol)];
+export const getUnitDefinition = (symbol) => NAMED_UNITS[resolveUnitKey(symbol)];
 
 const normalizeMicro = (expression) => {
 	let out = "";
@@ -221,7 +221,7 @@ export function parseUnits(expression) {
 
 				const { prefix: prefixSymbol, base, rawExponent } = token;
 				const resolvedKey = resolveUnitKey(base);
-				const unit = UNIT_DEFINITIONS[resolvedKey];
+				const unit = NAMED_UNITS[resolvedKey];
 				if (!unit) return { error: `Unrecognized base unit: ${base}` };
 				if (!(prefixSymbol in PREFIX_MULTIPLIERS))
 					return { error: `Unrecognized prefix: ${prefixSymbol}` };
@@ -654,7 +654,7 @@ function unitFromSymbol(symbol) {
 
 	const [, prefixSymbol = "", base, rawExponent = ""] = m;
 	const resolvedKey = resolveUnitKey(base);
-	const def = UNIT_DEFINITIONS[resolvedKey];
+	const def = NAMED_UNITS[resolvedKey];
 	if (!def) return { error: `Unrecognized base unit: ${base}` };
 	if (!(prefixSymbol in PREFIX_MULTIPLIERS))
 		return { error: `Unrecognized prefix: ${prefixSymbol}` };
@@ -805,7 +805,7 @@ export function hasDimOverlapAcrossSides(expression) {
 			let match;
 			while ((match = regex.exec(segment)) !== null) {
 				const [, , base] = match;
-				const unit = UNIT_DEFINITIONS[resolveUnitKey(base)];
+				const unit = NAMED_UNITS[resolveUnitKey(base)];
 				if (!unit) continue;
 				Object.keys(unit.dim).forEach((dimKey) => target.add(dimKey));
 			}

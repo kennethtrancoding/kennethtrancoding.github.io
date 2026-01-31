@@ -52,7 +52,7 @@ export const PREFIX_NAMES = {
 	r: "ronto",
 	q: "quecto",
 };
-export const UNIT_DEFINITIONS = {
+export const NAMED_UNITS = {
 	s: {
 		name: "second",
 		dim: { Time: 1 },
@@ -484,6 +484,7 @@ export const UNIT_DEFINITIONS = {
 
 	mickey: {
 		name: "mickey",
+		plural: "mickeys",
 		dim: { Length: 1 },
 		factor: 0.01, // cm per mickey (here: 0.1 mm)
 		allowPrefix: false,
@@ -492,12 +493,12 @@ export const UNIT_DEFINITIONS = {
 		hint: "Slang for a tiny mouse-movement increment (depends on hardware/software). Here defined as: 1 mickey = 0.01 cm = 0.1 mm = 1×10⁻⁴ m.",
 	},
 };
-export const UNIT_ALIASES = Object.entries(UNIT_DEFINITIONS).flatMap(([key, def]) =>
+export const UNIT_ALIASES = Object.entries(NAMED_UNITS).flatMap(([key, def]) =>
 	(def.aliases || []).map((alias) => [alias, key]),
 );
 export const ALL_UNIT_SYMBOLS = [
-	...Object.keys(UNIT_DEFINITIONS),
+	...Object.keys(NAMED_UNITS),
 	...UNIT_ALIASES.map(([alias]) => alias),
 ].sort((a, b) => b.length - a.length);
-export const BASE_UNITS = Object.keys(UNIT_DEFINITIONS).sort((a, b) => b.length - a.length);
+export const BASE_UNITS = Object.keys(NAMED_UNITS).sort((a, b) => b.length - a.length);
 export const PREFIXES = Object.keys(PREFIX_MULTIPLIERS);
