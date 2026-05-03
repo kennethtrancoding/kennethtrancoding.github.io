@@ -17,6 +17,8 @@ const sortedUnits = ALL_UNIT_SYMBOLS.slice().sort((a, b) => b.length - a.length)
 export const getUnitDefinition = (symbol) => NAMED_UNITS[resolveUnitKey(symbol)];
 
 const normalizeMicro = (expression) => {
+	// Let users type "um" for micrometers, but leave a bare "u" alone when it is
+	// not clearly a metric prefix attached to a known prefixable unit.
 	let out = "";
 	let i = 0;
 	const len = expression.length;
@@ -123,6 +125,8 @@ function expandFractions(expr) {
 }
 
 export function cleanExpression(expression) {
+	// Convert MathQuill/LaTeX-ish input into the compact grammar consumed by the
+	// tokenizer: plain operators, parenthesis groups, and ^integer exponents.
 	const fractionNormalized = expandFractions(expression);
 	const output = normalizeMicro(fractionNormalized.trim())
 		.replace(/\\+left|\\+right/g, "")
@@ -142,6 +146,7 @@ export function cleanExpression(expression) {
 }
 
 export function dimensionsEqual(dimensionA, dimensionB) {
+	// Dimension objects only store non-zero exponents, so missing keys count as 0.
 	const keys = new Set([...Object.keys(dimensionA), ...Object.keys(dimensionB)]);
 	for (const key of keys) if ((dimensionA[key] || 0) !== (dimensionB[key] || 0)) return false;
 	return true;
@@ -155,6 +160,8 @@ const unitRegex = () => new RegExp(unitPattern, "g");
 const exponentRegex = /^\^-?\d+/;
 
 const matchUnitAt = (text, startIndex) => {
+	// Prefer the longest legal unit/prefix match. This prevents "min" from being
+	// read as "m" plus leftover "in", and "dam" from becoming "d" + "am".
 	let best = null;
 
 	for (const base of sortedUnits) {
@@ -181,6 +188,7 @@ const matchUnitAt = (text, startIndex) => {
 };
 
 export const scanUnitToken = (text, startIndex) => {
+	// A unit token is a prefixable symbol plus an optional integer exponent.
 	const unitMatch = matchUnitAt(text, startIndex);
 	if (!unitMatch) return null;
 	const exponentMatch = exponentRegex.exec(text.slice(startIndex + unitMatch.length));
@@ -231,6 +239,8 @@ export function parseUnits(expression) {
 				const exponent = (rawExponent ? parseInt(rawExponent.slice(1), 10) : 1) * sign;
 
 				if (unit.offset) {
+					// Offset units need affine conversion, so they are only valid as a
+					// single standalone unit like degC, not inside compound expressions.
 					if (parts.length > 1 || segments.length > 1 || exponent !== 1 || sign === -1)
 						return {
 							error: "Offset units like Celsius cannot be combined, divided, or exponentiated.",
@@ -246,9 +256,12 @@ export function parseUnits(expression) {
 				const normalizedPrefix =
 					unit.allowPrefix === false && prefixSymbol ? "" : prefixSymbol;
 
+				// factor converts from this expression into the app's base dimensions.
 				factor *= Math.pow(unit.factor * prefixMultiplier, exponent);
 				baseUnitsUsed.add(resolvedKey);
 
+				// Dimensions are exponent vectors; multiplication adds exponents and
+				// division subtracts them via the signed exponent above.
 				for (const [dimensionKey, value] of Object.entries(unit.dim)) {
 					dimension[dimensionKey] = (dimension[dimensionKey] || 0) + value * exponent;
 					if (!dimension[dimensionKey]) delete dimension[dimensionKey];
@@ -279,6 +292,8 @@ export function convertValue(value, fromUnit, toUnitExpression) {
 	if (!dimensionsEqual(fromParsed.dim, toParsed.dim))
 		return { error: "Units are not dimensionally compatible." };
 
+	// Offset units are converted through their absolute base value first, then the
+	// target offset is subtracted after scaling back out.
 	let baseValue = value * fromParsed.factor;
 	if (fromParsed.offset) baseValue = (value + fromParsed.offset) * fromParsed.factor;
 
@@ -297,6 +312,8 @@ export function tokenize(expression) {
 		numberPattern.lastIndex = index;
 		const prev = tokens[tokens.length - 1];
 		const canTakeSignedNumber =
+			// A leading sign belongs to the number only at expression starts or after
+			// an operator/open parenthesis; elsewhere it is parsed as + or -.
 			!prev || prev.type === "operator" || (prev.type === "paren" && prev.value === "(");
 
 		const numberMatch = numberPattern.exec(input);
@@ -532,6 +549,8 @@ export function evaluateAst(node) {
 			if (!Number.isFinite(exponent.value)) return { error: "Invalid exponent." };
 			if (!Number.isInteger(exponent.value))
 				return { error: "Exponent must be an integer for units." };
+			// Unit exponentiation is limited to integer powers so dimensions remain
+			// integer vectors and generated answers stay classroom-friendly.
 			return {
 				value: Math.pow(base.value, exponent.value),
 				unit: powUnit(base.unit, exponent.value),
@@ -550,6 +569,8 @@ export function evaluateAst(node) {
 }
 
 function sameUnitDefinition(a, b) {
+	// Answers must use the requested target unit, not just any unit with the same
+	// dimensions, so compare both dimensions and exact scale/offset identity.
 	if (!a || !b) return false;
 	if (!dimensionsEqual(a.dim, b.dim)) return false;
 	if (a.hasOffset !== b.hasOffset) return false;
@@ -603,6 +624,8 @@ function cloneDim(dim) {
 }
 
 function addDim(a, b, scale = 1) {
+	// Shared helper for multiplying or dividing unit dimensions. Zero exponents
+	// are deleted to keep later equality checks simple.
 	const out = cloneDim(a);
 	for (const k of Object.keys(b)) {
 		out[k] = (out[k] || 0) + b[k] * scale;
@@ -648,6 +671,8 @@ function isUnitSymbol(symbol) {
 }
 
 function unitFromSymbol(symbol) {
+	// Convert one token such as "km^2" into the unit object shape used by AST
+	// evaluation: scale factor, dimension vector, and optional offset metadata.
 	const r = new RegExp(`^${unitPattern}$`);
 	const m = symbol.match(r);
 	if (!m) return { error: `Invalid unit token: ${symbol}` };
@@ -782,12 +807,18 @@ function separateValueAndUnitObj(node) {
 	return { valueNode: node, unit: { factor: 1, dim: {} } };
 }
 
-export const UNIT_TOKENS = ALL_UNIT_SYMBOLS.flatMap((baseUnit) => [
-	baseUnit,
-	...PREFIXES.filter(Boolean).map((prefixSymbol) => `${prefixSymbol}${baseUnit}`),
-]);
+export const UNIT_TOKENS = ALL_UNIT_SYMBOLS.flatMap((baseUnit) => {
+	const def = getUnitDefinition(baseUnit);
+	const prefixedUnits =
+		def?.allowPrefix === false
+			? []
+			: PREFIXES.filter(Boolean).map((prefixSymbol) => `${prefixSymbol}${baseUnit}`);
+	return [baseUnit, ...prefixedUnits];
+});
 
 export function hasDimOverlapAcrossSides(expression) {
+	// Generated questions avoid reducible forms where the same dimension appears
+	// in numerator and denominator, even if the full expression is still valid.
 	const sanitized = cleanExpression(expression);
 	const numeratorDims = new Set();
 	const denominatorDims = new Set();

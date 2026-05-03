@@ -3,36 +3,6 @@
 import { NAMED_UNITS, BASE_UNITS, ALL_UNIT_SYMBOLS, UNIT_ALIASES, PREFIXES } from "./units.js";
 import { parseUnits, dimensionsEqual, convertValue, hasDimOverlapAcrossSides } from "./parse.js";
 
-const QUESTION_TYPES = {
-	prefixConversion: () => {
-		const base = pickRandom(BASE_UNITS.filter((u) => NAMED_UNITS[u].allowPrefix !== false));
-		const fromPrefix = pickRandom(PREFIXES);
-		let toPrefix;
-		do {
-			toPrefix = pickRandom(PREFIXES);
-		} while (toPrefix === fromPrefix);
-
-		const fromUnit = `${fromPrefix}${base}`;
-		const toUnit = `${toPrefix}${base}`;
-		const amount = randomAmount();
-
-		return {
-			amountValue: amount.value,
-			amountDisplay: amount.plain,
-			amountLatex: amount.latex,
-			fromUnit,
-			toUnit,
-			expected: convertValue(amount.value, fromUnit, toUnit).value,
-		};
-	},
-	definition: () => {
-		const base = pickRandom(BASE_UNITS);
-		const basePrefix = pickRandom(PREFIXES);
-		const unitDef = NAMED_UNITS[base].dim;
-		const amount = randomAmount();
-	},
-};
-
 const resolveUnitKey = (symbol) => {
 	const alias = UNIT_ALIASES.find(([alias]) => alias === symbol);
 	return alias ? alias[1] : symbol;
@@ -49,6 +19,8 @@ const CATEGORY_SIGNATURES = {
 	radiation: [],
 };
 
+// Categories such as electrical or chemistry only make useful questions when
+// their distinguishing base dimension is present in the generated expression.
 const getUnitCategory = (key) => NAMED_UNITS[key]?.category || "mechanical";
 const isSimpleDimension = (dim) => Object.keys(dim).every((k) => SIMPLE_DIM_KEYS.has(k));
 const hasSignatureForCategory = (dim, category) => {
@@ -64,6 +36,8 @@ function randomUnit(basePool = BASE_UNITS) {
 	const base = pickRandom(basePool);
 	const baseDef = NAMED_UNITS[base];
 	const prefix = baseDef.allowPrefix ? pickRandom(PREFIXES) : "";
+	// Negative and zero draws become denominator terms; positive draws stay in
+	// the numerator. Zero is treated as exponent 1 so every term contributes.
 	const exponent = Math.floor(Math.random() * 5) - 2;
 	const unitSymbol = `${prefix}${base}`;
 
@@ -80,6 +54,8 @@ function randomUnit(basePool = BASE_UNITS) {
 }
 
 function getAllowedUnitPool(targetDim) {
+	// When matching an existing simple dimension, avoid mixing in specialized
+	// domains like photometry unless their dimensions actually belong there.
 	if (targetDim && isSimpleDimension(targetDim)) {
 		const pool = BASE_UNITS.filter(
 			(key) =>
@@ -130,6 +106,8 @@ function randomUnitExpression(targetDimensions = null) {
 				const parsedCandidate = parseUnits(formatted);
 				if (parsedCandidate.error) continue;
 
+				// Reject expressions such as m/s/m where the same dimension appears
+				// on both sides; they are technically reducible but confusing in drills.
 				const dimKeys = Object.keys(parsedCandidate.dim);
 				const goesToDenom = candidate.isDenominator || Math.random() < 0.5;
 				const conflicting = goesToDenom
@@ -160,6 +138,8 @@ function randomUnitExpression(targetDimensions = null) {
 		}
 
 		if (numer.length === 0) {
+			// Always produce a non-empty numerator so expressions are displayable
+			// and parseUnits can infer a real dimensional target.
 			const base = pickRandom(BASE_UNITS);
 			const baseDef = NAMED_UNITS[base];
 			const prefix = baseDef.allowPrefix ? pickRandom(PREFIXES) : "";
@@ -167,11 +147,17 @@ function randomUnitExpression(targetDimensions = null) {
 		}
 
 		let expression = numer.join("*");
-		if (denom.length > 0) expression += `/${denom.join("*")}`;
+		if (denom.length > 1) {
+			expression += `/(${denom.join("*")})`;
+		} else if (denom.length > 0) {
+			expression += `/${denom.join("*")}`;
+		}
 
 		const parsed = parseUnits(expression);
 		const expressionIsSimple = !parsed.error && parsed.dim && isSimpleDimension(parsed.dim);
 		const mustKeepSimple = targetSimple === null ? expressionIsSimple : targetSimple === true;
+		// The category set tracks what we tried to use, while the parsed dimension
+		// verifies the final expression still matches those category requirements.
 		const signaturesSatisfied =
 			parsed.error || !parsed.dim
 				? false
@@ -205,6 +191,8 @@ function randomUnitExpression(targetDimensions = null) {
 }
 
 function remapPrefixes(expression) {
+	// Keep the same unit structure but change allowed metric prefixes. This is
+	// used when generation accidentally picks identical source and target units.
 	let changed = "";
 	let lastIndex = 0;
 	const regex = new RegExp(unitPattern(), "g");
@@ -227,6 +215,7 @@ function remapPrefixes(expression) {
 }
 
 const unitPattern = () => {
+	// Longest prefixes are tested first so "da" is not split as "d" + "a...".
 	const prefixPattern = PREFIXES.filter(Boolean)
 		.sort((a, b) => b.length - a.length)
 		.join("|");
@@ -243,7 +232,7 @@ const gcd = (a, b) => {
 };
 
 const randomAmount = () => {
-	const mode = pickRandom(["number", "decimal", "fraction", "scientific"]);
+	let mode = pickRandom(["number", "decimal", "fraction", "scientific"]);
 
 	if (mode === "fraction") {
 		const numerator = Math.floor(Math.random() * 19) + 2; // 2–20
@@ -297,6 +286,8 @@ export function buildQuestion() {
 	let fromParsed;
 	let toParsed;
 	const ensureDifferentToUnit = (fromU, fromP, currentTo) => {
+		// Normalized units compare canonical bases, so aliases and prefixes do not
+		// accidentally produce a no-op conversion question.
 		const toP = parseUnits(currentTo);
 		if (!toP.error && toP.normalized !== fromP.normalized) return currentTo;
 		const fallback = randomUnitExpression(fromP.dim);
@@ -319,6 +310,8 @@ export function buildQuestion() {
 			continue;
 
 		for (let inner = 0; inner < 40; inner++) {
+			// First try an independently generated target. Matching by dimension keeps
+			// conversions valid even when the expression shape is different.
 			toUnit = randomUnitExpression();
 			toParsed = parseUnits(toUnit);
 			if (
@@ -345,6 +338,8 @@ export function buildQuestion() {
 		!dimensionsEqual(fromParsed.dim, toParsed.dim) ||
 		toParsed.normalized === fromParsed.normalized
 	) {
+		// Last-resort fallback: pick two named units from the same dimension so the
+		// UI always has a valid question instead of failing silently.
 		const base = pickRandom(BASE_UNITS);
 		const baseDim = NAMED_UNITS[base].dim;
 		const sameDimUnits = BASE_UNITS.filter((b) => dimensionsEqual(NAMED_UNITS[b].dim, baseDim));
@@ -385,5 +380,3 @@ export function buildQuestion() {
 		expected: convertValue(amount.value, fromUnit, toUnit).value,
 	};
 }
-
-console.log(QUESTION_TYPES.prefixConversion());

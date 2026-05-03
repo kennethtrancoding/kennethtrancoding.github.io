@@ -10,6 +10,8 @@ import {
 } from "./parse.js";
 
 const pluralizeUnitName = (name, unitDef) => {
+	// Unit metadata wins over generic English rules for irregular or invariant
+	// names such as hertz, siemens, and degrees Celsius.
 	if (unitDef?.plural) return unitDef.plural;
 	if (unitDef?.invariantPlural) return name;
 	if (name.startsWith("degree ")) return name.replace("degree ", "degrees ");
@@ -23,18 +25,21 @@ const singularizeUnitName = (name) => name;
 export function toLatexUnits(expression) {
 	const parts = cleanExpression(expression).split("/");
 	const formatPart = (part) => {
+		const normalizedPart = part.replace(/[()]/g, "");
+		// Scan unit tokens rather than splitting on letters so multi-character
+		// symbols like arcsec, mol, and prefixed units remain intact.
 		let out = "";
 		let cursor = 0;
-		while (cursor < part.length) {
-			const ch = part[cursor];
+		while (cursor < normalizedPart.length) {
+			const ch = normalizedPart[cursor];
 			if (ch === "*") {
 				out += "\\,";
 				cursor++;
 				continue;
 			}
-			const token = scanUnitToken(part, cursor);
+			const token = scanUnitToken(normalizedPart, cursor);
 			if (!token) {
-				out += part.slice(cursor).replace(/\*/g, "\\,");
+				out += normalizedPart.slice(cursor).replace(/\*/g, "\\,");
 				break;
 			}
 			const prefixSymbol = token.prefix === "u" ? "µ" : token.prefix;
@@ -42,11 +47,13 @@ export function toLatexUnits(expression) {
 			out += `\\mathrm{${prefixSymbol}${token.base}}${exponent}`;
 			cursor += token.consumed;
 		}
-		return out || part;
+		return out || normalizedPart;
 	};
 
 	if (parts.length === 1) return formatPart(parts[0]);
 
+	// Multiple slash groups are rendered as nested fractions, matching the left
+	// associative parse used elsewhere in the app.
 	const [first, ...rest] = parts;
 	let acc = formatPart(first);
 	for (const part of rest) acc = `\\frac{${acc}}{${formatPart(part)}}`;
@@ -62,6 +69,8 @@ export function toPlainUnits(expression, options = {}) {
 	} = options;
 	const collapseSpaces = (text) => text.replace(/\s+/g, " ").trim();
 	const wrapBalanced = (s) => {
+		// Parenthesize numerator/denominator groups unless they are already one
+		// balanced group, which keeps plain text unambiguous without double wraps.
 		if (!wrapFractions) return s;
 		if (!s) return "";
 		if (!(s.startsWith("(") && s.endsWith(")"))) return `(${s})`;
@@ -97,6 +106,8 @@ export function toPlainUnits(expression, options = {}) {
 		return piece;
 	};
 	const formatTokensLoosely = (tokenList = []) => {
+		// Fallback formatter for partial or unsupported expressions. It preserves
+		// user-entered operators while still expanding known unit names.
 		if (!Array.isArray(tokenList) || !tokenList.length)
 			return collapseSpaces(cleanExpression(expression));
 		let rebuilt = "";
@@ -126,6 +137,8 @@ export function toPlainUnits(expression, options = {}) {
 
 	const wrap = wrapBalanced;
 	const unwrapGroup = (node) => {
+		// Formatting does not need to preserve parser-only grouping nodes once
+		// precedence has already been captured in the AST.
 		let current = node;
 		while (current?.type === "group") current = current.value;
 		return current || node;
@@ -155,6 +168,8 @@ export function toPlainUnits(expression, options = {}) {
 			}
 			case "binary":
 				if (node.op !== "*" && node.op !== "/") {
+					// Addition/subtraction are parser-valid but not useful in unit
+					// display text, so fall back to the loose token rendering.
 					encounteredUnsupportedOp = true;
 					return "";
 				}
@@ -165,10 +180,12 @@ export function toPlainUnits(expression, options = {}) {
 					);
 					return `${left}/${right}`;
 				}
-				return collapseSpaces(`${formatFactor(node.left, inDenominator)} * ${formatFactor(
-					node.right,
-					inDenominator,
-				)}`);
+				return collapseSpaces(
+					`${formatFactor(node.left, inDenominator)} * ${formatFactor(
+						node.right,
+						inDenominator,
+					)}`,
+				);
 			default:
 				return "";
 		}
@@ -179,6 +196,8 @@ export function toPlainUnits(expression, options = {}) {
 		inDenominator = false,
 		acc = { numerator: [], denominator: [] },
 	) => {
+		// Flatten products and divisions into numerator/denominator buckets so
+		// text reads as "m * s / kg" instead of mirroring AST nesting.
 		if (!node) return acc;
 		const target = unwrapGroup(node);
 		if (target.type === "binary" && (target.op === "*" || target.op === "/")) {
@@ -208,4 +227,66 @@ export function toPlainUnits(expression, options = {}) {
 	const rendered = collapseSpaces(formatNode(parsed.ast));
 	if (encounteredUnsupportedOp) return fallbackPerFormat();
 	return rendered || fallbackPerFormat();
+}
+
+export function toTooltipText(expression) {
+	const cleaned = cleanExpression(expression);
+	const tokens = tokenize(cleaned);
+	if (!tokens || tokens.error) return cleaned;
+	const parsed = parseExpression(tokens);
+	if (parsed.error || !parsed.ast) return cleaned;
+
+	const unwrap = (node) => {
+		let n = node;
+		while (n?.type === "group") n = n.value;
+		return n || node;
+	};
+
+	const numer = [];
+	const denom = [];
+
+	const exponentText = (value) => {
+		if (!value) return "";
+		const n = unwrap(value);
+		if (n?.type === "number") return `^${n.value}`;
+		return "";
+	};
+	const collect = (node, inDenom = false, inheritedExponent = "") => {
+		// Tooltip text ignores numeric factors, but keeps unit exponents visible
+		// so symbols such as min^2 do not collapse to just "minutes".
+		const n = unwrap(node);
+		if (!n) return;
+		switch (n.type) {
+			case "binary":
+				collect(n.left, inDenom, inheritedExponent);
+				collect(n.right, n.op === "/" ? !inDenom : inDenom, inheritedExponent);
+				break;
+			case "unary":
+				collect(n.value, inDenom, inheritedExponent);
+				break;
+			case "power":
+				collect(n.base, inDenom, `${inheritedExponent}${exponentText(n.exponent)}`);
+				break;
+			case "unit": {
+				const token = scanUnitToken(n.symbol, 0);
+				if (!token) return;
+				const prefixSymbol = token.prefix === "u" ? "µ" : token.prefix;
+				const prefixName = PREFIX_NAMES[prefixSymbol] || prefixSymbol;
+				const unitDef = getUnitDefinition(token.base);
+				const baseName = unitDef?.name || token.base;
+				const name = inDenom ? baseName : pluralizeUnitName(baseName, unitDef);
+				const unitExponent = token.rawExponent
+					? `^${token.rawExponent.slice(1)}`
+					: inheritedExponent;
+				(inDenom ? denom : numer).push(`${prefixName}${name}${unitExponent}`.trim());
+				break;
+			}
+			default:
+				break;
+		}
+	};
+
+	collect(parsed.ast);
+	if (!numer.length) return cleaned;
+	return denom.length ? `${numer.join(" ")} per ${denom.join(" ")}` : numer.join(" ");
 }
