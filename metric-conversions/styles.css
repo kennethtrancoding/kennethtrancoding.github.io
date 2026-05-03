@@ -83,14 +83,12 @@ button {
 }
 #msg,
 #hint,
-#full,
 #preview {
 	margin-top: 14px;
 	min-height: 28px;
 	font-size: 1.2rem;
 }
 #hint,
-#full,
 #preview {
 	color: #909090;
 	margin-left: auto;
@@ -99,7 +97,7 @@ button {
 	margin-top: 0;
 }
 #hint {
-	margin: 0 20px 0 auto;
+	margin: 14px 20px 0 auto;
 	text-align: right;
 	display: flex;
 	flex-direction: column;
@@ -119,13 +117,36 @@ button {
 	display: inline-block;
 	margin-right: 8px;
 }
-#full,
 #preview {
 	line-height: 1.2;
 }
-#full strong,
 .unit-accent {
 	color: #6161c2;
+}
+[data-tooltip] {
+	position: relative;
+	cursor: default;
+}
+[data-tooltip]::after {
+	content: attr(data-tooltip);
+	position: absolute;
+	bottom: calc(100% + 5px);
+	left: 50%;
+	transform: translateX(-50%);
+	background: #222;
+	color: #fff;
+	padding: 3px 8px;
+	border-radius: 5px;
+	font-size: 14px;
+	font-family: Georgia, "Times New Roman", Times, serif;
+	white-space: nowrap;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.12s;
+	z-index: 200;
+}
+[data-tooltip]:hover::after {
+	opacity: 1;
 }
 .top-nav {
 	font-family: Arial, sans-serif;

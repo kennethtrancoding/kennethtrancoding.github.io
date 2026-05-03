@@ -21,7 +21,6 @@
 		</nav>
 		<div class="wrap">
 			<div id="question"></div>
-			<div id="full"></div>
 			<hr />
 			<div class="row">
 				<span id="answerMQ" aria-label="Answer"></span>
@@ -45,13 +44,13 @@
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.js"></script>
 		<script>
 			window.MathJax = {
-				loader: { load: ["[tex]/html"] },
+				loader: { load: ["[tex]/color"] },
 				tex: {
-					packages: { "[+]": ["html"] },
+					packages: { "[+]": ["color"] },
 				},
 			};
 		</script>
-		<script src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 		<script type="module" src="./script.js"></script>
 	</body>

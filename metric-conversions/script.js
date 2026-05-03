@@ -1,7 +1,7 @@
 // Front-end controller for the metric conversions drill. Handles rendering a random
 // conversion question, live-previewing typed units, parsing the MathQuill input,
 // and validating the submitted answer.
-import { toPlainUnits, toLatexUnits } from "./parse-display.js";
+import { toLatexUnits, toTooltipText } from "./parse-display.js";
 import {
 	cleanExpression,
 	tokenize,
@@ -24,13 +24,19 @@ const setPreview = (content, { asHtml = false, isError = false } = {}) => {
 	if (!content) return el.text("");
 	return asHtml ? el.html(content) : el.text(content);
 };
-
-const plainUnitOptions = {
-	pluralizeNumerator: true,
-	singularizeDenominator: true,
+const setAnswerTooltip = (text = "") => {
+	const answer = $("#answerMQ");
+	if (text) answer.attr("data-tooltip", text);
+	else answer.removeAttr("data-tooltip");
 };
-const UNIT_ACCENT_COLOR = "#6161c2";
-const colorLatex = (content) => `\\color{${UNIT_ACCENT_COLOR}}{${content}}`;
+const escapeAttr = (text) =>
+	String(text)
+		.replace(/&/g, "&amp;")
+		.replace(/"/g, "&quot;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+
+const colorLatex = (content) => `\\color[RGB]{97,97,194}{${content}}`;
 
 const questionStems = [
 	"Convert %AMOUNT% %FROM% to %TO%.",
@@ -118,18 +124,27 @@ const fillStem = (stem, replacements) =>
 
 function updatePreview(answerField) {
 	try {
-		// Show a human-friendly unit string while the user types; bail out on any parse issues.
+		// Keep the answer tooltip in sync while the user types; bail out on parse issues.
 		const raw = answerField.latex();
-		if (!raw) return setPreview("");
+		const preview = $("#preview");
+		preview.removeAttr("data-tooltip");
+		if (!raw) {
+			setPreview("");
+			setAnswerTooltip("");
+			return;
+		}
 		const cleaned = cleanExpression(raw);
 		const tokens = tokenize(cleaned);
-		if (tokens.error) return setPreview("Invalid input—check your syntax!", { isError: true });
+		if (tokens.error) {
+			setPreview("Invalid input—check your syntax!", { isError: true });
+			setAnswerTooltip("");
+			return;
+		}
 		const list = tokens.tokens || [];
 		let rebuilt = "";
 		let prevType = null;
 		for (const tok of list) {
 			const isUnit = tok.type === "unit";
-			const isNumber = tok.type === "number";
 			const isOpenParen = tok.type === "paren" && tok.value === "(";
 			const isCloseParen = tok.type === "paren" && tok.value === ")";
 			const needsStar =
@@ -139,20 +154,13 @@ function updatePreview(answerField) {
 			rebuilt += tok.value;
 			prevType = isCloseParen ? "closeParen" : tok.type;
 		}
-		const coloredPlain = toPlainUnits(rebuilt, {
-			...plainUnitOptions,
-			wrapUnitsWith: (text) => `<span class="unit-accent">${text}</span>`,
-		});
-		const spaced = coloredPlain
-			.replace(/\*/g, " * ")
-			.replace(/([0-9)])(?=<span)/g, "$1 ")
-			.replace(/([0-9)])(?=[A-Za-zµ])/g, "$1 ")
-			.replace(/\s+/g, " ")
-			.trim();
-		setPreview(spaced, { asHtml: true });
+		setPreview("");
+		setAnswerTooltip(toTooltipText(rebuilt));
 	} catch (e) {
 		console.warn("Preview rendering failed", e);
 		setPreview("Invalid input—check your syntax!", { isError: true });
+		$("#preview").removeAttr("data-tooltip");
+		setAnswerTooltip("");
 	}
 }
 
@@ -184,30 +192,18 @@ function renderHint(fromExpr, toExpr) {
 function renderQuestion(answerField) {
 	currentQuestion = buildQuestion();
 
-	// Render LaTeX and plain-English versions of the prompt using a shared stem.
 	const stemTemplate = pickStem();
-	const formatPlainUnits = (expr) =>
-		toPlainUnits(expr, plainUnitOptions).replace(/\*/g, " * ").replace(/\s+/g, " ").trim();
-	const plainFrom = formatPlainUnits(currentQuestion.fromUnit);
-	const plainTo = formatPlainUnits(currentQuestion.toUnit);
-	const latexFrom = `\\(${colorLatex(toLatexUnits(currentQuestion.fromUnit))}\\)`;
-	const latexTo = `\\(${colorLatex(toLatexUnits(currentQuestion.toUnit))}\\)`;
-	const amountPlain = currentQuestion.amountDisplay || currentQuestion.amountValue || "";
-	const amountLatex = `\\(${currentQuestion.amountLatex || amountPlain}\\)`;
+	const latexFrom = `<span data-tooltip="${escapeAttr(toTooltipText(currentQuestion.fromUnit))}">\\(${colorLatex(toLatexUnits(currentQuestion.fromUnit))}\\)</span>`;
+	const latexTo = `<span data-tooltip="${escapeAttr(toTooltipText(currentQuestion.toUnit))}">\\(${colorLatex(toLatexUnits(currentQuestion.toUnit))}\\)</span>`;
+	const amountLatex = `\\(${currentQuestion.amountLatex || currentQuestion.amountDisplay || currentQuestion.amountValue || ""}\\)`;
 
 	const latexStem = fillStem(stemTemplate, {
 		AMOUNT: amountLatex,
 		FROM: latexFrom,
 		TO: latexTo,
 	});
-	const plainStem = fillStem(stemTemplate, {
-		AMOUNT: amountPlain,
-		FROM: `<strong>${plainFrom}</strong>`,
-		TO: `<strong>${plainTo}</strong>`,
-	});
 
 	$("#question").html(latexStem);
-	$("#full").html(plainStem);
 	renderHint(currentQuestion.fromUnit, currentQuestion.toUnit);
 	setMessage("");
 	answerField.latex("");

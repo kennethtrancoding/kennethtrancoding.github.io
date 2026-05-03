@@ -1,3 +1,5 @@
+// Metric prefix scale factors. The empty-string entry represents "no prefix" so
+// prefix lookup code can use one table for prefixed and unprefixed units.
 export const PREFIX_MULTIPLIERS = {
 	Q: 1e30,
 	R: 1e27,
@@ -25,6 +27,7 @@ export const PREFIX_MULTIPLIERS = {
 	r: 1e-27,
 	q: 1e-30,
 };
+// Human-readable prefix names used in plain-English display and tooltip text.
 export const PREFIX_NAMES = {
 	Q: "quetta",
 	R: "ronna",
@@ -52,6 +55,10 @@ export const PREFIX_NAMES = {
 	r: "ronto",
 	q: "quecto",
 };
+// Unit catalog. Each factor converts one displayed unit into this app's base
+// unit system: meter for length, second for time, gram for mass, and SI-style
+// base dimensions for the other quantities. Compound dimensions are stored as
+// exponent maps, for example newton = g*m/s^2.
 export const NAMED_UNITS = {
 	s: {
 		name: "second",
@@ -256,6 +263,8 @@ export const NAMED_UNITS = {
 		plural: "degrees Celsius",
 		dim: { Temperature: 1 },
 		factor: 1,
+		// Offset is applied before/after scaling in convertValue. Offset units are
+		// intentionally restricted from compound expressions by the parser.
 		offset: 273.15,
 		allowPrefix: false,
 		category: "temperature",
@@ -402,100 +411,102 @@ export const NAMED_UNITS = {
 		category: "logarithmicNeper",
 		aliases: ["neper"],
 	},
-	smoot: {
-		name: "smoot",
-		dim: { Length: 1 },
-		factor: 1.7018 * 1e2, // cm per smoot (≈ 1.7018 m)
-		allowPrefix: false,
-		aliases: ["smoot", "sm"],
-		category: "nonsense",
-		hint: "Oliver Smoot’s height. Conversion: 1 smoot ≈ 1.7018 m = 170.18 cm.",
-	},
+	// smoot: {
+	// 	name: "smoot",
+	// 	dim: { Length: 1 },
+	// 	factor: 1.7018, // m per smoot (≈ 1.7018 m)
+	// 	allowPrefix: false,
+	// 	aliases: ["smoot", "sm"],
+	// 	category: "nonsense",
+	// 	hint: "Oliver Smoot’s height. Conversion: 1 smoot ≈ 1.7018 m = 170.18 cm.",
+	// },
 
-	potrzebie: {
-		name: "potrzebie",
-		dim: { Length: 1 },
-		factor: 2.2636, // cm per potrzebie
-		allowPrefix: false,
-		aliases: ["potrzebie", "ptb"],
-		category: "nonsense",
-		hint: "MAD Magazine joke unit (thickness of MAD issue #26). Conversion (commonly cited): 1 potrzebie ≈ 2.2636 cm = 0.022636 m.",
-	},
+	// potrzebie: {
+	// 	name: "potrzebie",
+	// 	dim: { Length: 1 },
+	// 	factor: 0.022636, // m per potrzebie (≈ 2.2636 cm)
+	// 	allowPrefix: false,
+	// 	aliases: ["potrzebie", "ptb"],
+	// 	category: "nonsense",
+	// 	hint: "MAD Magazine joke unit (thickness of MAD issue #26). Conversion (commonly cited): 1 potrzebie ≈ 2.2636 cm = 0.022636 m.",
+	// },
 
-	jiffy: {
-		name: "jiffy",
-		dim: { Time: 1 },
-		factor: 1e3, // ms per jiffy (here: 1 s)
-		allowPrefix: false,
-		aliases: ["jiffy"],
-		category: "nonsense",
-		hint: "Colloquial ‘a short time’ (varies by context). In this library it’s defined as: 1 jiffy = 1 s = 1000 ms.",
-	},
+	// jiffy: {
+	// 	name: "jiffy",
+	// 	dim: { Time: 1 },
+	// 	factor: 1, // s per jiffy (1 jiffy = 1 s)
+	// 	allowPrefix: false,
+	// 	aliases: ["jiffy"],
+	// 	category: "nonsense",
+	// 	hint: "Colloquial ‘a short time’ (varies by context). In this library it’s defined as: 1 jiffy = 1 s = 1000 ms.",
+	// },
 
-	furlongPerFortnight: {
-		name: "furlong per fortnight",
-		dim: { Length: 1, Time: -1 },
-		factor: (201.168 / 1209600) * 1e2, // (cm/ms) per (furlong/fortnight)
-		allowPrefix: false,
-		aliases: ["furlongfortnight", "fpf"],
-		category: "nonsense",
-		hint: "Speed unit. 1 furlong = 201.168 m; 1 fortnight = 14 days = 1,209,600 s. So 1 fpf = 201.168/1,209,600 m/s ≈ 1.6631×10⁻⁴ m/s (≈ 0.00016631 m/s).",
-	},
+	// furlongPerFortnight: {
+	// 	name: "furlong per fortnight",
+	// 	dim: { Length: 1, Time: -1 },
+	// 	factor: 201.168 / 1209600, // m/s per (furlong/fortnight)
+	// 	allowPrefix: false,
+	// 	aliases: ["furlongfortnight", "fpf"],
+	// 	category: "nonsense",
+	// 	hint: "Speed unit. 1 furlong = 201.168 m; 1 fortnight = 14 days = 1,209,600 s. So 1 fpf = 201.168/1,209,600 m/s ≈ 1.6631×10⁻⁴ m/s (≈ 0.00016631 m/s).",
+	// },
 
-	beardSecond: {
-		name: "beard-second",
-		dim: { Length: 1 },
-		factor: 1e-7, // cm per beard-second (here: 1 nm)
-		allowPrefix: false,
-		aliases: ["beardsecond"],
-		category: "nonsense",
-		hint: "‘Distance a beard grows in one second’ (highly variable). Here it’s fixed as: 1 beard-second = 1 nm = 1×10⁻⁹ m = 1×10⁻⁷ cm.",
-	},
+	// beardSecond: {
+	// 	name: "beard-second",
+	// 	dim: { Length: 1 },
+	// 	factor: 1e-9, // m per beard-second (1 beard-second = 1 nm)
+	// 	allowPrefix: false,
+	// 	aliases: ["beardsecond"],
+	// 	category: "nonsense",
+	// 	hint: "‘Distance a beard grows in one second’ (highly variable). Here it’s fixed as: 1 beard-second = 1 nm = 1×10⁻⁹ m = 1×10⁻⁷ cm.",
+	// },
 
-	helen: {
-		name: "helen",
-		dim: { Dimensionless: 1 },
-		factor: 1,
-		allowPrefix: true,
-		aliases: ["helen"],
-		category: "nonsense",
-		hint: "Beauty gag unit: 1 helen ‘launches’ 1000 ships. So 1 millihelen (mhelen) = 1 ship.",
-	},
+	// helen: {
+	// 	name: "helen",
+	// 	dim: { Dimensionless: 1 },
+	// 	factor: 1,
+	// 	allowPrefix: true,
+	// 	aliases: ["helen"],
+	// 	category: "nonsense",
+	// 	hint: "Beauty gag unit: 1 helen ‘launches’ 1000 ships. So 1 millihelen (mhelen) = 1 ship.",
+	// },
 
-	sagan: {
-		name: "sagan",
-		dim: { Dimensionless: 1 },
-		factor: 1e9,
-		allowPrefix: true,
-		aliases: ["sagan"],
-		category: "nonsense",
-		hint: "Quantity gag unit meaning ‘billions and billions’. Here defined as: 1 sagan = 1×10⁹ (one billion).",
-	},
+	// sagan: {
+	// 	name: "sagan",
+	// 	dim: { Dimensionless: 1 },
+	// 	factor: 1e9,
+	// 	allowPrefix: true,
+	// 	aliases: ["sagan"],
+	// 	category: "nonsense",
+	// 	hint: "Quantity gag unit meaning ‘billions and billions’. Here defined as: 1 sagan = 1×10⁹ (one billion).",
+	// },
 
-	bananaEquivalentDose: {
-		name: "banana equivalent dose",
-		dim: { Mass: 1, Length: 2, Time: -2 }, // energy-like placeholder
-		factor: 1.0e-7 * 1e3, // placeholder in your base units
-		allowPrefix: false,
-		aliases: ["banana equivalent dose", "banana", "bed"],
-		category: "nonsense",
-		hint: "Humorous radiation comparison based on K-40 in a banana (not formal dosimetry). Common reference: 1 banana ≈ 0.1 μSv = 1×10⁻⁷ Sv (order-of-magnitude).",
-	},
+	// bananaEquivalentDose: {
+	// 	name: "banana equivalent dose",
+	// 	dim: { Mass: 1, Length: 2, Time: -2 }, // energy-like placeholder
+	// 	factor: 1.0e-7 * 1e3, // placeholder in your base units
+	// 	allowPrefix: false,
+	// 	aliases: ["banana equivalent dose", "banana", "bed"],
+	// 	category: "nonsense",
+	// 	hint: "Humorous radiation comparison based on K-40 in a banana (not formal dosimetry). Common reference: 1 banana ≈ 0.1 μSv = 1×10⁻⁷ Sv (order-of-magnitude).",
+	// },
 
-	mickey: {
-		name: "mickey",
-		plural: "mickeys",
-		dim: { Length: 1 },
-		factor: 0.01, // cm per mickey (here: 0.1 mm)
-		allowPrefix: false,
-		aliases: ["mickey"],
-		category: "nonsense",
-		hint: "Slang for a tiny mouse-movement increment (depends on hardware/software). Here defined as: 1 mickey = 0.01 cm = 0.1 mm = 1×10⁻⁴ m.",
-	},
+	// mickey: {
+	// 	name: "mickey",
+	// 	plural: "mickeys",
+	// 	dim: { Length: 1 },
+	// 	factor: 1e-4, // m per mickey (0.01 cm = 0.1 mm = 1×10⁻⁴ m)
+	// 	allowPrefix: false,
+	// 	aliases: ["mickey"],
+	// 	category: "nonsense",
+	// 	hint: "Slang for a tiny mouse-movement increment (depends on hardware/software). Here defined as: 1 mickey = 0.01 cm = 0.1 mm = 1×10⁻⁴ m.",
+	// },
 };
+// Aliases let user-facing names resolve to the canonical keys in NAMED_UNITS.
 export const UNIT_ALIASES = Object.entries(NAMED_UNITS).flatMap(([key, def]) =>
 	(def.aliases || []).map((alias) => [alias, key]),
 );
+// Longest-first sorting prevents partial symbol matches while tokenizing.
 export const ALL_UNIT_SYMBOLS = [
 	...Object.keys(NAMED_UNITS),
 	...UNIT_ALIASES.map(([alias]) => alias),
