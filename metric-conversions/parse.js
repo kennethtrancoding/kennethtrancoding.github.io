@@ -575,7 +575,11 @@ function sameUnitDefinition(a, b) {
 	if (!dimensionsEqual(a.dim, b.dim)) return false;
 	if (a.hasOffset !== b.hasOffset) return false;
 	if (a.hasOffset && a.offset !== b.offset) return false;
-	return Math.abs(a.factor - b.factor) < 1e-12;
+	// Compare scale factors with a relative tolerance: factors span a huge dynamic
+	// range (e.g. ~1e17 for bar/nK), so an absolute epsilon would reject correct
+	// answers whose factor differs only by floating-point rounding.
+	const scale = Math.max(Math.abs(a.factor), Math.abs(b.factor));
+	return Math.abs(a.factor - b.factor) <= 1e-9 * (scale || 1);
 }
 
 export function parseAnswer(rawInput, targetUnit) {
