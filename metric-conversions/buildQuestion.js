@@ -280,7 +280,7 @@ const randomAmount = () => {
 	};
 };
 
-export function buildQuestion() {
+export function buildQuestion(attempt = 0) {
 	let fromUnit;
 	let toUnit;
 	let fromParsed;
@@ -368,6 +368,17 @@ export function buildQuestion() {
 			const remapped = remapPrefixes(fromUnit);
 			if (remapped !== fromUnit) toUnit = remapped;
 		}
+	}
+
+	// A few dimensions (neper, steradian) have exactly one representable unit, so no
+	// distinct target can exist and the steps above leave from === to. Rather than
+	// ask "convert X Np to Np", retry from a fresh dimension; if we somehow keep
+	// landing on a stuck dimension, fall back to a guaranteed-convertible pair.
+	const finalToParsed = parseUnits(toUnit);
+	if (!finalToParsed.error && finalToParsed.normalized === fromParsed.normalized) {
+		if (attempt < 8) return buildQuestion(attempt + 1);
+		fromUnit = "m";
+		toUnit = "km";
 	}
 
 	const amount = randomAmount();
