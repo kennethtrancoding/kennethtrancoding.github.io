@@ -4,6 +4,7 @@ import {
 	pickWords,
 	scrambleLetters,
 	countAcceptableSolutions,
+	findSolutions,
 } from "./words.js";
 
 const WORD_COUNT = 5;
@@ -29,6 +30,8 @@ const key = dailyKey();
 const random = makeRandom(key);
 const { words, solutions } = pickWords(WORD_COUNT, random);
 const solutionsAcceptableWords = countAcceptableSolutions(words);
+
+window.findSolutions = (limit = 100) => findSolutions(words, limit);
 
 // Local-date key: everyone playing on the same calendar day gets the same puzzle.
 function dailyKey() {
