@@ -85,7 +85,7 @@
 					<li>Every valid word clears its letters from the pile.</li>
 					<li>Clear the whole pile to win.</li>
 					<li>Use <b>↺</b> next to a found word to send its letters back.</li>
-					<li>You only get <b>10 undos</b>—an 11th ends the game.</li>
+					<li>You only get 10 undos—the 11th ends the game.</li>
 				</ul>
 				<p class="modal-foot">A new puzzle is made every day.</p>
 				<button class="btn primary modal-play" id="tutorial-play" type="button">
@@ -163,6 +163,24 @@
 				<button class="btn primary modal-play" id="lose-dismiss" type="button">
 					Dismiss
 				</button>
+			</div>
+		</div>
+
+		<div
+			class="modal"
+			id="solutions-modal"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="solutions-title"
+			aria-hidden="true">
+			<div class="modal-card">
+				<button class="modal-close" id="solutions-close" type="button" aria-label="Close">
+					×
+				</button>
+				<h2 class="modal-title" id="solutions-title">Solutions</h2>
+				<p class="modal-sub" id="solutions-sub"></p>
+				<ul class="solution-list" id="solutions-list"></ul>
+				<nav class="solution-pager" id="solutions-pager" aria-label="Solution pages"></nav>
 			</div>
 		</div>
 
