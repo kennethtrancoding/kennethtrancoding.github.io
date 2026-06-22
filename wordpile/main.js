@@ -31,7 +31,11 @@ const random = makeRandom(key);
 const { words, solutions } = pickWords(WORD_COUNT, random);
 const solutionsAcceptableWords = countAcceptableSolutions(words);
 
-window.findSolutions = (limit = 100) => findSolutions(words, limit);
+// Expose the solution finder for debugging from the browser console. Defaults to
+// today's pile; pass a custom word list, a cap, and/or the acceptable dictionary
+// to override.
+window.findSolutions = (puzzleWords = words, limit = 100, acceptableDictionary = false) =>
+	findSolutions(puzzleWords, limit, acceptableDictionary);
 
 // Local-date key: everyone playing on the same calendar day gets the same puzzle.
 function dailyKey() {
@@ -382,6 +386,13 @@ window.addEventListener("keydown", (event) => {
 		return;
 	}
 
+	// The solutions list opens on top of the win/lose screen, so it owns the
+	// keyboard first: Escape closes just the list.
+	if (solutionsModal?.classList.contains("show")) {
+		if (event.key === "Escape") closeSolutions();
+		return;
+	}
+
 	// While the tutorial is open it owns the keyboard: Escape closes it, nothing else.
 	if (tutorial?.classList.contains("show")) {
 		if (event.key === "Escape") closeTutorial();
@@ -483,6 +494,24 @@ const winPctEl = document.getElementById("win-winpct");
 const winTimeUntilNew = document.getElementById("win-time-until-new");
 const loseTimeUntilNew = document.getElementById("lose-time-until-new");
 let countdownInterval = null;
+
+const solutionsModal = document.getElementById("solutions-modal");
+const solutionsClose = document.getElementById("solutions-close");
+const solutionsTitle = document.getElementById("solutions-title");
+const solutionsSub = document.getElementById("solutions-sub");
+const solutionsList = document.getElementById("solutions-list");
+const solutionsPager = document.getElementById("solutions-pager");
+
+// How many solutions to enumerate for the modal. Infinity = all of them; the
+// obscure set can run to tens of thousands, so they're paged rather than scrolled.
+const SOLUTION_DISPLAY_LIMIT = Infinity;
+// Rows per page (Google-results style) and how many numbered pages flank the
+// current one before collapsing to an ellipsis.
+const SOLUTIONS_PER_PAGE = 12;
+const PAGER_WINDOW = 1;
+
+// The currently-open solution list and which page of it is showing.
+let solutionsView = { list: [], page: 0, summarize: () => "" };
 
 function loadJSON(key, fallback) {
 	try {
@@ -676,12 +705,185 @@ function formatCountdown(ms) {
 	return `${h}:${m}:${s}`;
 }
 
-function tickCountdown(win = true) {
-	const timeUntilNew = win ? winTimeUntilNew : loseTimeUntilNew;
-	if (!timeUntilNew) return;
+const obscureCount = solutionsAcceptableWords - solutions;
 
-	timeUntilNew.textContent = `Today's pile had ${solutions} solutions (and ${solutionsAcceptableWords - solutions} obscure ones). Come back in ${formatCountdown(msUntilNextDay())} for a new pile!`;
+// The win/lose footer: the solution counts are clickable links that open the
+// full lists, plus a live countdown to the next pile. Rendered once per screen
+// (so the link listeners survive), then tickCountdown() only updates the clock.
+function renderEndFooter(win) {
+	const el = win ? winTimeUntilNew : loseTimeUntilNew;
+	if (!el) return;
+
+	const commonLabel = `${solutions} common ${solutions === 1 ? "solution" : "solutions"}`;
+	const obscureLabel = `${obscureCount} obscurer ${obscureCount === 1 ? "one" : "ones"}`;
+	const commonLink = `<button type="button" class="link-btn" data-solutions="common">${commonLabel}</button>`;
+	// Nothing to show when there are no obscure solutions, so leave it as plain text.
+	const obscureLink = obscureCount
+		? `<button type="button" class="link-btn" data-solutions="obscure">${obscureLabel}</button>`
+		: obscureLabel;
+
+	el.innerHTML =
+		`Today's pile had ${commonLink} (and ${obscureLink}). ` +
+		`Come back in <span class="countdown">${formatCountdown(msUntilNextDay())}</span> for a new pile!`;
 }
+
+function tickCountdown(win = true) {
+	const el = win ? winTimeUntilNew : loseTimeUntilNew;
+	const countdown = el?.querySelector(".countdown");
+	if (countdown) countdown.textContent = formatCountdown(msUntilNextDay());
+}
+
+// Canonical key for a solution: words sorted, so the same unordered set (in any
+// word order) always maps to one key — used to drop common sets out of obscure.
+function solutionKey(solution) {
+	return [...solution].sort().join("|");
+}
+
+function openSolutions(kind) {
+	if (!solutionsModal) return;
+
+	const common = findSolutions(words);
+
+	if (kind === "common") {
+		solutionsTitle.textContent = "Common solutions";
+		solutionsView = {
+			page: 0,
+			total: common.length,
+			cache: common, // small — already fully in hand
+			load: () => common,
+			summarize: (n) =>
+				`${n} way${n === 1 ? "" : "s"} to clear the pile using common answer words`,
+		};
+	} else {
+		// Obscure = acceptable solutions minus the curated common ones. The total is
+		// already known cheaply (obscureCount), so we don't enumerate up front — the
+		// list is built lazily, only as many as the visible page needs.
+		const commonKeys = new Set(common.map(solutionKey));
+		solutionsTitle.textContent = "Obscure solutions";
+		solutionsView = {
+			page: 0,
+			total: obscureCount,
+			cache: [],
+			// Enumerate just enough acceptable solutions to yield `count` obscure ones
+			// (allowing for the few common sets we filter back out).
+			load: (count) =>
+				findSolutions(words, count + common.length, true).filter(
+					(solution) => !commonKeys.has(solutionKey(solution)),
+				),
+			summarize: (n) =>
+				`${n} way${n === 1 ? "" : "s"} to clear the pile using rarer dictionary words`,
+		};
+	}
+
+	renderSolutionsPage();
+
+	solutionsModal.classList.add("show");
+	solutionsModal.setAttribute("aria-hidden", "false");
+	solutionsClose?.focus();
+}
+
+// Renders the current page of solutionsView into the list, updates the subtitle
+// with the visible range, and rebuilds the page navigator. Solutions are loaded
+// lazily: the cache only grows to cover the page being viewed.
+function renderSolutionsPage() {
+	const view = solutionsView;
+	const { summarize, total } = view;
+	const pageCount = Math.max(1, Math.ceil(total / SOLUTIONS_PER_PAGE));
+	const current = Math.min(Math.max(view.page, 0), pageCount - 1);
+	view.page = current;
+
+	// Grow the cache only as far as this page needs (never past the true total).
+	const needed = (current + 1) * SOLUTIONS_PER_PAGE;
+	if (view.cache.length < needed && view.cache.length < total) {
+		view.cache = view.load(needed);
+	}
+
+	const start = current * SOLUTIONS_PER_PAGE;
+	const pageItems = view.cache.slice(start, start + SOLUTIONS_PER_PAGE);
+
+	solutionsSub.textContent =
+		pageCount > 1
+			? `${summarize(total)} (showing ${start + 1}–${start + pageItems.length}).`
+			: `${summarize(total)}.`;
+
+	solutionsList.innerHTML = "";
+	for (const solution of pageItems) {
+		const item = document.createElement("li");
+		item.className = "solution-row";
+		item.textContent = solution.join(" · ");
+		solutionsList.append(item);
+	}
+
+	renderPager(current, pageCount);
+}
+
+// Google-style pager: Prev/Next plus first, last, and a window of pages around
+// the current one, with "…" gaps for the pages in between.
+function renderPager(current, pageCount) {
+	if (!solutionsPager) return;
+	solutionsPager.innerHTML = "";
+	if (pageCount <= 1) return;
+
+	const addButton = (label, page, { disabled = false, isCurrent = false, aria } = {}) => {
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = isCurrent ? "pager-btn current" : "pager-btn";
+		button.textContent = label;
+		if (aria) button.setAttribute("aria-label", aria);
+		if (isCurrent) button.setAttribute("aria-current", "page");
+		if (disabled || isCurrent) button.disabled = disabled;
+		if (!disabled && !isCurrent) button.dataset.page = String(page);
+		solutionsPager.append(button);
+	};
+	const addGap = () => {
+		const gap = document.createElement("span");
+		gap.className = "pager-gap";
+		gap.textContent = "…";
+		solutionsPager.append(gap);
+	};
+
+	addButton("‹ Prev", current - 1, { disabled: current === 0, aria: "Previous page" });
+
+	const visible = new Set([0, pageCount - 1]);
+
+	for (let p = current - PAGER_WINDOW; p <= current + PAGER_WINDOW; p++) {
+		if (p >= 0 && p < pageCount) visible.add(p);
+	}
+
+	let previous = -1;
+	for (const p of [...visible].sort((a, b) => a - b)) {
+		if (p - previous > 1) addGap();
+		addButton(String(p + 1), p, { isCurrent: p === current, aria: `Page ${p + 1}` });
+		previous = p;
+	}
+
+	addButton("Next ›", current + 1, { disabled: current === pageCount - 1, aria: "Next page" });
+}
+
+function closeSolutions() {
+	if (!solutionsModal) return;
+	solutionsModal.classList.remove("show");
+	solutionsModal.setAttribute("aria-hidden", "true");
+}
+
+function handleSolutionLink(event) {
+	const button = event.target.closest(".link-btn");
+	if (button) openSolutions(button.dataset.solutions);
+}
+
+winTimeUntilNew?.addEventListener("click", handleSolutionLink);
+loseTimeUntilNew?.addEventListener("click", handleSolutionLink);
+solutionsPager?.addEventListener("click", (event) => {
+	const button = event.target.closest(".pager-btn");
+	if (!button || button.dataset.page === undefined) return;
+	solutionsView.page = Number(button.dataset.page);
+	renderSolutionsPage();
+});
+solutionsClose?.addEventListener("click", closeSolutions);
+solutionsModal?.addEventListener("click", (event) => {
+	// Click on the dimmed backdrop (not the card) dismisses.
+	if (event.target === solutionsModal) closeSolutions();
+});
 
 function showWinScreen() {
 	if (!winScreen) return;
@@ -691,9 +893,10 @@ function showWinScreen() {
 	winBestEl.textContent = String(stats.maxStreak);
 	winPctEl.textContent = `${winPct()}%`;
 
-	tickCountdown();
+	renderEndFooter(true);
+	tickCountdown(true);
 	clearInterval(countdownInterval);
-	countdownInterval = setInterval(tickCountdown, 1000);
+	countdownInterval = setInterval(() => tickCountdown(true), 1000);
 
 	winScreen.classList.add("show");
 	winScreen.setAttribute("aria-hidden", "false");
@@ -714,6 +917,7 @@ function showLoseScreen() {
 	loseFoundEl.textContent = `${foundWords.length}/${WORD_COUNT}`;
 	loseTimeEl.textContent = formatTime(elapsedMs());
 
+	renderEndFooter(false);
 	tickCountdown(false);
 	clearInterval(countdownInterval);
 	countdownInterval = setInterval(() => tickCountdown(false), 1000);

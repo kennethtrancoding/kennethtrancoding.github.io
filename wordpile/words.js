@@ -165,7 +165,7 @@ export const countSolutions = (pool, slots, limit, budget, useAcceptableWords = 
 
 	fill(pool, slots);
 	return { solutions, exhausted };
-}
+};
 
 // Counts how many distinct ways the pile (from `words`) can be solved using the
 // full acceptable-word dictionary. Returns a plain number.
@@ -473,17 +473,20 @@ export function scoreDifficulty(words) {
 	return poolDifficulty(pool, words.length);
 }
 
-// Enumerates every distinct way the pile (from `words`) can be split into answer
-// words — i.e. all complete solutions. Each is an array of uppercase words;
-// ascending-id ordering keeps each unordered solution unique. Capped at `limit`.
-export function findSolutions(words, limit = 100) {
+// Enumerates every distinct way the pile (from `words`) can be split into words
+// drawn from `candidateSigs` — i.e. all complete solutions. Each is an array of
+// uppercase words; non-decreasing-id ordering keeps each unordered solution
+// unique. A word may be reused if the pile has enough letters for it (the game
+// lets you submit the same word twice), so this matches countSolutions. Capped
+// at `limit`.
+function enumerateSolutions(words, candidateSigs, limit) {
 	const pool = new Int8Array(26);
 	for (const word of words) {
 		const w = word.toLowerCase();
 		for (let i = 0; i < w.length; i++) pool[w.charCodeAt(i) - A]++;
 	}
 	const slots = words.length;
-	const candidates = candidatesInPool(pool);
+	const candidates = candidateSigs.filter((sig) => fitsInPool(pool, sig.counts));
 	const out = [];
 
 	function rec(remaining, start, chosen) {
@@ -496,13 +499,20 @@ export function findSolutions(words, limit = 100) {
 			if (!fitsInPool(remaining, sig.counts)) continue;
 			const next = remaining.slice();
 			for (let c = 0; c < 26; c++) next[c] -= sig.counts[c];
-			rec(next, i + 1, [...chosen, sig]);
+			// Stay at i (not i + 1) so the same word can fill more than one slot.
+			rec(next, i, [...chosen, sig]);
 		}
 	}
 
 	rec(pool, 0, []);
-	console.log(out);
 	return out;
+}
+
+// All complete solutions built from either the curated answer list or the full acceptable-word dictionary.
+export function findSolutions(words, limit = Infinity, acceptableWords = false) {
+	const wordlist = acceptableWords ? ACCEPTABLE_INDEX.sigs : ANSWER_SIGS;
+
+	return enumerateSolutions(words, wordlist, limit);
 }
 
 export function scrambleLetters(words, random = Math.random) {
