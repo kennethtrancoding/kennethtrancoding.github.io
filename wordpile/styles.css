@@ -280,6 +280,11 @@ h1 {
 	grid-template-columns: repeat(5, minmax(52px, 1fr));
 	gap: 10px;
 }
+.letter-grid:empty::before {
+	content: "Loading board...";
+	color: var(--muted);
+	font-size: 14px;
+}
 
 .letter {
 	position: relative;
