@@ -10,7 +10,7 @@ import {
 const WORD_COUNT = 5;
 const WORD_LENGTH = 5;
 const GRID_COLUMNS = 5;
-const MAX_UNDOS = 10;
+const MAX_UNDOS = 5;
 
 const grid = document.getElementById("letter-grid");
 const rack = document.getElementById("word-rack");
