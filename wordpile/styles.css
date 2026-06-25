@@ -140,7 +140,7 @@ h1 {
 
 .statbar {
 	display: grid;
-	grid-template-columns: repeat(3, 1fr);
+	grid-template-columns: repeat(4, 1fr);
 	gap: 10px;
 }
 
@@ -158,6 +158,11 @@ h1 {
 	font-weight: 700;
 	line-height: 1;
 	font-variant-numeric: tabular-nums;
+}
+
+/* Undo counter turns red as it runs low. */
+.stat-value.danger {
+	color: var(--red);
 }
 
 .stat-label {
