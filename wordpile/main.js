@@ -1,8 +1,15 @@
-import { isValidWord, makeRandom, pickWords, scrambleLetters } from "./words.js";
+import {
+	isValidWord,
+	makeRandom,
+	pickWords,
+	scrambleLetters,
+	countAcceptableSolutions,
+} from "./words.js";
 
 const WORD_COUNT = 5;
 const WORD_LENGTH = 5;
 const GRID_COLUMNS = 5;
+const MAX_UNDOS = 10;
 
 const grid = document.getElementById("letter-grid");
 const rack = document.getElementById("word-rack");
@@ -16,6 +23,12 @@ const puzzleLabel = document.getElementById("puzzle-label");
 const statTime = document.getElementById("stat-time");
 const statStreak = document.getElementById("stat-streak");
 const statWinPct = document.getElementById("stat-winpct");
+const statUndos = document.getElementById("stat-undos");
+
+const key = dailyKey();
+const random = makeRandom(key);
+const { words, solutions } = pickWords(WORD_COUNT, random);
+const solutionsAcceptableWords = countAcceptableSolutions(words);
 
 // Local-date key: everyone playing on the same calendar day gets the same puzzle.
 function dailyKey() {
@@ -32,6 +45,8 @@ let foundWords = [];
 let nextLetterId = 0;
 let nextWordId = 0;
 let focusedLetterId = null;
+let undosUsed = 0;
+let lost = false;
 
 function createLetters(chars) {
 	return chars.map((letter) => ({
@@ -44,14 +59,14 @@ function createLetters(chars) {
 function newGame() {
 	// Seed from today's date so the puzzle is identical for every player today,
 	// yet effectively random from one day to the next.
-	const key = dailyKey();
-	const random = makeRandom(key);
-	const { words, solutions } = pickWords(WORD_COUNT, random);
+
 	letters = createLetters(scrambleLetters(words, random));
 	selectedIds = [];
 	foundWords = [];
 	nextWordId = 0;
 	focusedLetterId = null;
+	undosUsed = 0;
+	lost = false;
 
 	// Restore today's in-progress (or finished) board, if any.
 	restoreGame(key);
@@ -63,8 +78,9 @@ function newGame() {
 	startTimer(key);
 	renderStats();
 
-	// Already solved today: re-show the win screen on reopen.
+	// Already finished today: re-show the relevant end screen on reopen.
 	if (foundWords.length === WORD_COUNT) showWinScreen();
+	else if (lost) showLoseScreen();
 }
 
 function render() {
@@ -129,8 +145,10 @@ function renderGrid() {
 function renderFoundWords() {
 	foundList.innerHTML = "";
 
-	// Once the pile is cleared the puzzle is locked: no returning letters.
+	// Once the pile is cleared (or the game is lost) the puzzle is locked: no
+	// returning letters.
 	const won = foundWords.length === WORD_COUNT;
+	const locked = won || lost;
 
 	for (const entry of foundWords) {
 		const item = document.createElement("li");
@@ -144,10 +162,10 @@ function renderFoundWords() {
 		button.className = "icon-btn";
 		button.type = "button";
 		button.dataset.id = String(entry.id);
-		button.title = won ? "Puzzle solved" : "Return letters";
+		button.title = won ? "Pile cleared" : lost ? "Game over" : "Return letters";
 		button.setAttribute("aria-label", `Return ${entry.word}`);
 		button.textContent = "↺";
-		button.disabled = won;
+		button.disabled = locked;
 
 		item.append(word, button);
 		foundList.append(item);
@@ -155,8 +173,14 @@ function renderFoundWords() {
 }
 
 function updateStatus() {
-	submitButton.disabled = selectedIds.length !== WORD_LENGTH;
+	submitButton.disabled = selectedIds.length !== WORD_LENGTH || lost;
 	win.classList.toggle("show", foundWords.length === WORD_COUNT);
+
+	const undosLeft = MAX_UNDOS - undosUsed;
+	if (statUndos) {
+		statUndos.textContent = String(undosLeft);
+		statUndos.classList.toggle("danger", undosLeft <= 3);
+	}
 }
 
 function getLetter(id) {
@@ -217,6 +241,7 @@ function letterInDirection(id, key) {
 }
 
 function toggleLetter(id) {
+	if (lost) return;
 	const item = getLetter(id);
 	if (!item || item.used) return;
 
@@ -235,6 +260,7 @@ function toggleLetter(id) {
 }
 
 function submitWord() {
+	if (lost) return;
 	if (selectedIds.length !== WORD_LENGTH) return;
 
 	const word = selectedIds.map((id) => getLetter(id).letter).join("");
@@ -257,17 +283,25 @@ function submitWord() {
 }
 
 function clearSelection() {
+	if (lost) return;
 	selectedIds = [];
 	setMessage("");
 	render();
 }
 
 function returnWord(id) {
-	// The puzzle is locked once solved.
-	if (foundWords.length === WORD_COUNT) return;
+	// The puzzle is locked once solved or lost.
+	if (foundWords.length === WORD_COUNT || lost) return;
 
 	const index = foundWords.findIndex((entry) => entry.id === id);
 	if (index < 0) return;
+
+	// Undos are a limited resource: you get MAX_UNDOS, and the next one ends the game.
+	if (undosUsed >= MAX_UNDOS) {
+		onLose();
+		return;
+	}
+	undosUsed++;
 
 	const [entry] = foundWords.splice(index, 1);
 	for (const letterId of entry.letterIds) {
@@ -275,7 +309,13 @@ function returnWord(id) {
 		if (letter) letter.used = false;
 	}
 	selectedIds = [];
-	setMessage("Letters returned");
+
+	const undosLeft = MAX_UNDOS - undosUsed;
+	if (undosLeft === 0) {
+		setMessage("No undos left—one more ends the game", "bad");
+	} else {
+		setMessage(`Letters returned · ${undosLeft} undo${undosLeft === 1 ? "" : "s"} left`);
+	}
 	render();
 }
 
@@ -351,6 +391,12 @@ window.addEventListener("keydown", (event) => {
 		return;
 	}
 
+	// Same for the game-over screen.
+	if (loseScreen?.classList.contains("show")) {
+		if (event.key === "Escape") closeLoseScreen();
+		return;
+	}
+
 	if (/^[a-z]$/i.test(event.key)) {
 		selectKeyboardLetter(event.key.toUpperCase());
 	} else if (event.key === "Backspace") {
@@ -418,6 +464,12 @@ const STATS_KEY = "wordpile:stats";
 const TIMER_KEY = "wordpile:timer";
 const GAME_KEY = "wordpile:game";
 
+const loseScreen = document.getElementById("losescreen");
+const loseClose = document.getElementById("lose-close");
+const loseDismiss = document.getElementById("lose-dismiss");
+const loseFoundEl = document.getElementById("lose-found");
+const loseTimeEl = document.getElementById("lose-time");
+
 const winScreen = document.getElementById("winscreen");
 const winClose = document.getElementById("win-close");
 const winShare = document.getElementById("win-share");
@@ -425,7 +477,8 @@ const winTimeEl = document.getElementById("win-time");
 const winStreakEl = document.getElementById("win-streak");
 const winBestEl = document.getElementById("win-best");
 const winPctEl = document.getElementById("win-winpct");
-const timeUntilNew = document.getElementById("time-until-new");
+const winTimeUntilNew = document.getElementById("win-time-until-new");
+const loseTimeUntilNew = document.getElementById("lose-time-until-new");
 let countdownInterval = null;
 
 function loadJSON(key, fallback) {
@@ -454,6 +507,8 @@ function saveGame() {
 		foundWords,
 		nextWordId,
 		selectedIds,
+		undosUsed,
+		lost,
 	});
 }
 
@@ -463,6 +518,8 @@ function restoreGame(key) {
 
 	foundWords = Array.isArray(saved.foundWords) ? saved.foundWords : [];
 	nextWordId = Number.isInteger(saved.nextWordId) ? saved.nextWordId : foundWords.length;
+	undosUsed = Number.isInteger(saved.undosUsed) ? saved.undosUsed : 0;
+	lost = saved.lost === true;
 
 	// Re-mark every letter consumed by a found word as used.
 	for (const entry of foundWords) {
@@ -584,6 +641,22 @@ function onWin() {
 	showWinScreen();
 }
 
+function onLose() {
+	lost = true;
+
+	// Freeze the clock at the moment of the loss (persist so reloads stay frozen).
+	if (timer && timer.wonElapsedMs == null) {
+		timer.wonElapsedMs = Date.now() - timer.startTime;
+		saveJSON(TIMER_KEY, timer);
+	}
+	stopTimer();
+	statTime.textContent = formatTime(elapsedMs());
+
+	// render() also persists the now-lost board via saveGame().
+	render();
+	showLoseScreen();
+}
+
 // Milliseconds until the next local midnight, when dailyKey() rolls over to a
 // fresh puzzle.
 function msUntilNextDay() {
@@ -600,9 +673,11 @@ function formatCountdown(ms) {
 	return `${h}:${m}:${s}`;
 }
 
-function tickCountdown() {
+function tickCountdown(win = true) {
+	const timeUntilNew = win ? winTimeUntilNew : loseTimeUntilNew;
 	if (!timeUntilNew) return;
-	timeUntilNew.textContent = `A new puzzle is made every day—come back in ${formatCountdown(msUntilNextDay())}.`;
+
+	timeUntilNew.textContent = `Today's pile had ${solutions} solutions (and ${solutionsAcceptableWords - solutions} obscure ones). Come back in ${formatCountdown(msUntilNextDay())} for a new pile!`;
 }
 
 function showWinScreen() {
@@ -628,6 +703,29 @@ function closeWinScreen() {
 	countdownInterval = null;
 	winScreen.classList.remove("show");
 	winScreen.setAttribute("aria-hidden", "true");
+}
+
+function showLoseScreen() {
+	if (!loseScreen) return;
+
+	loseFoundEl.textContent = `${foundWords.length}/${WORD_COUNT}`;
+	loseTimeEl.textContent = formatTime(elapsedMs());
+
+	tickCountdown(false);
+	clearInterval(countdownInterval);
+	countdownInterval = setInterval(() => tickCountdown(false), 1000);
+
+	loseScreen.classList.add("show");
+	loseScreen.setAttribute("aria-hidden", "false");
+	loseDismiss?.focus();
+}
+
+function closeLoseScreen() {
+	if (!loseScreen) return;
+	clearInterval(countdownInterval);
+	countdownInterval = null;
+	loseScreen.classList.remove("show");
+	loseScreen.setAttribute("aria-hidden", "true");
 }
 
 function shareResult() {
@@ -660,6 +758,13 @@ winShare?.addEventListener("click", shareResult);
 winScreen?.addEventListener("click", (event) => {
 	// Click on the dimmed backdrop (not the card) dismisses.
 	if (event.target === winScreen) closeWinScreen();
+});
+
+loseClose?.addEventListener("click", closeLoseScreen);
+loseDismiss?.addEventListener("click", closeLoseScreen);
+loseScreen?.addEventListener("click", (event) => {
+	// Click on the dimmed backdrop (not the card) dismisses.
+	if (event.target === loseScreen) closeLoseScreen();
 });
 
 newGame();
