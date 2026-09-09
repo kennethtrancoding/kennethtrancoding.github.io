@@ -52,8 +52,12 @@ body {
 .top-nav a:hover {
 	text-decoration: underline;
 }
-.help-btn {
+.header-actions {
 	margin-left: auto;
+	display: flex;
+	gap: 8px;
+}
+.help-btn {
 	width: 30px;
 	height: 30px;
 	display: grid;
@@ -547,6 +551,57 @@ h1 {
 	width: 100%;
 	min-height: 48px;
 	font-size: 16px;
+}
+
+/* --- Past boards (archive) modal ----------------------------------------- */
+.archive-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	margin: 0 0 12px;
+}
+
+.archive-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	color: #333;
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.archive-field input[type="date"] {
+	padding: 10px 12px;
+	font: inherit;
+	color: #111;
+	background: #fff;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.archive-play {
+	min-height: 46px;
+}
+
+.archive-error {
+	min-height: 18px;
+	margin: 0 0 12px;
+	color: var(--red);
+	font-size: 14px;
+}
+
+.archive-error:empty {
+	min-height: 0;
+	margin: 0;
+}
+
+.archive-today {
+	width: 100%;
+	min-height: 46px;
+}
+
+.archive-today[hidden] {
+	display: none;
 }
 
 /* --- Solution links + list ----------------------------------------------- */

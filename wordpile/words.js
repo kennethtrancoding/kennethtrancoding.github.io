@@ -438,7 +438,7 @@ function obviousRareCount(pool, demand) {
 
 // Scores a 25-letter pile (Int8Array of 26 letter counts) split into `slots`
 // words. Returns the difficulty plus the raw component values for inspection.
-function poolDifficulty(pool, slots) {
+export function poolDifficulty(pool, slots) {
 	const candidates = candidatesInPool(pool);
 
 	const C = candidates.length;

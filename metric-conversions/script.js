@@ -3,14 +3,13 @@
 // and validating the submitted answer.
 import { toLatexUnits, toTooltipText } from "./parse-display.js";
 import {
-	cleanExpression,
-	tokenize,
+	analyzeExpression,
 	parseAnswer,
 	convertValue,
 	UNIT_TOKENS,
 	parseUnits,
 } from "./parse.js";
-import { buildQuestion } from "./buildQuestion.js";
+import { buildQuestion } from "./build-question.js";
 import { NAMED_UNITS } from "./units.js";
 
 let currentQuestion = null;
@@ -123,45 +122,26 @@ const fillStem = (stem, replacements) =>
 	stem.replace(/%([A-Z]+)%/g, (m, key) => (key in replacements ? replacements[key] : m));
 
 function updatePreview(answerField) {
-	try {
-		// Keep the answer tooltip in sync while the user types; bail out on parse issues.
-		const raw = answerField.latex();
-		const preview = $("#preview");
-		preview.removeAttr("data-tooltip");
-		if (!raw) {
-			setPreview("");
-			setAnswerTooltip("");
-			return;
-		}
-		const cleaned = cleanExpression(raw);
-		const tokens = tokenize(cleaned);
-		if (tokens.error) {
-			setPreview("Invalid input—check your syntax!", { isError: true });
-			setAnswerTooltip("");
-			return;
-		}
-		const list = tokens.tokens || [];
-		let rebuilt = "";
-		let prevType = null;
-		for (const tok of list) {
-			const isUnit = tok.type === "unit";
-			const isOpenParen = tok.type === "paren" && tok.value === "(";
-			const isCloseParen = tok.type === "paren" && tok.value === ")";
-			const needsStar =
-				(isUnit || isOpenParen) &&
-				(prevType === "unit" || prevType === "number" || prevType === "closeParen");
-			if (needsStar) rebuilt += "*";
-			rebuilt += tok.value;
-			prevType = isCloseParen ? "closeParen" : tok.type;
-		}
+	// Keep the answer tooltip in sync while the user types. A single analysis
+	// drives both the error state and the tooltip, so the preview can never accept
+	// something Submit rejects, or report it differently. It also replaces the
+	// old step that re-serialized tokens back into text just to re-parse them.
+	const raw = answerField.latex();
+	$("#preview").removeAttr("data-tooltip");
+
+	const analyzed = analyzeExpression(raw);
+	if (!raw || analyzed.stage === "empty") {
 		setPreview("");
-		setAnswerTooltip(toTooltipText(rebuilt));
-	} catch (e) {
-		console.warn("Preview rendering failed", e);
-		setPreview("Invalid input—check your syntax!", { isError: true });
-		$("#preview").removeAttr("data-tooltip");
 		setAnswerTooltip("");
+		return;
 	}
+	if (analyzed.error) {
+		setPreview(analyzed.error, { isError: true });
+		setAnswerTooltip("");
+		return;
+	}
+	setPreview("");
+	setAnswerTooltip(toTooltipText(analyzed));
 }
 
 function refreshMath() {
@@ -193,8 +173,12 @@ function renderQuestion(answerField) {
 	currentQuestion = buildQuestion();
 
 	const stemTemplate = pickStem();
-	const latexFrom = `<span data-tooltip="${escapeAttr(toTooltipText(currentQuestion.fromUnit))}">\\(${colorLatex(toLatexUnits(currentQuestion.fromUnit))}\\)</span>`;
-	const latexTo = `<span data-tooltip="${escapeAttr(toTooltipText(currentQuestion.toUnit))}">\\(${colorLatex(toLatexUnits(currentQuestion.toUnit))}\\)</span>`;
+	// Analyze each unit once and hand the result to both renderers rather than
+	// letting each of them re-parse the same text.
+	const fromAnalysis = analyzeExpression(currentQuestion.fromUnit);
+	const toAnalysis = analyzeExpression(currentQuestion.toUnit);
+	const latexFrom = `<span data-tooltip="${escapeAttr(toTooltipText(fromAnalysis))}">\\(${colorLatex(toLatexUnits(fromAnalysis))}\\)</span>`;
+	const latexTo = `<span data-tooltip="${escapeAttr(toTooltipText(toAnalysis))}">\\(${colorLatex(toLatexUnits(toAnalysis))}\\)</span>`;
 	const amountLatex = `\\(${currentQuestion.amountLatex || currentQuestion.amountDisplay || currentQuestion.amountValue || ""}\\)`;
 
 	const latexStem = fillStem(stemTemplate, {
@@ -212,11 +196,12 @@ function renderQuestion(answerField) {
 }
 
 const mathQuillInterface = MathQuill.getInterface(2);
+// MathQuill only accepts letters here, so the micro sign travels as "u"; the
+// parser maps it back when the surrounding text makes it a prefix.
+const operatorNameTokens = UNIT_TOKENS.map((t) => t.replace("µ", "u"));
 const answerField = mathQuillInterface.MathField(document.getElementById("answerMQ"), {
 	// Let multi-letter unit symbols be typed without spaces.
-	autoOperatorNames: UNIT_TOKENS.filter((t) => t.length >= 2)
-		.map((t) => t.replace("µ", "u"))
-		.join(" "),
+	autoOperatorNames: operatorNameTokens.filter((t) => t.length >= 2).join(" "),
 	handlers: {
 		edit: () => {
 			setMessage("");
@@ -224,6 +209,18 @@ const answerField = mathQuillInterface.MathField(document.getElementById("answer
 		},
 	},
 });
+
+// The autoOperatorNames option rejects one-letter names, which left "m" and "s"
+// italic beside an upright "km" or "min". Registering them in the parsed set
+// afterwards skips that check and runs them through the same un-italicizing pass,
+// so every unit symbol gets the upright font and spacing, and exports as
+// \operatorname{...} the way the longer symbols already do.
+const registeredOperatorNames = answerField.__options?.autoOperatorNames;
+if (registeredOperatorNames) {
+	for (const token of operatorNameTokens) {
+		if (token.length === 1) registeredOperatorNames[token] = 1;
+	}
+}
 
 const focusAnswer = () => answerField.focus();
 

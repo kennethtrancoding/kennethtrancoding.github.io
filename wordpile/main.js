@@ -20,16 +20,39 @@ const message = document.getElementById("message");
 const foundList = document.getElementById("found-list");
 const win = document.getElementById("win");
 const puzzleLabel = document.getElementById("puzzle-label");
+const difficultyLabel = document.getElementById("difficulty-label");
 
 const statTime = document.getElementById("stat-time");
 const statStreak = document.getElementById("stat-streak");
 const statWinPct = document.getElementById("stat-winpct");
 const statUndos = document.getElementById("stat-undos");
 
-const key = dailyKey();
-const random = makeRandom(key);
-const { words, solutions } = pickWords(WORD_COUNT, random);
-const solutionsAcceptableWords = countAcceptableSolutions(words);
+// The board currently in play. `activeKey` is today's date for the real daily
+// puzzle, or a chosen past date in practice mode. The pile is regenerated
+// deterministically from this key, so the puzzle below is rebuilt by buildPuzzle.
+let activeKey = dailyKey();
+let practiceMode = false;
+let random;
+let words;
+let solutions;
+let solutionsAcceptableWords;
+let obscureCount;
+let difficulty;
+
+// (Re)generate the deterministic puzzle for `dateKey`. Same date → same pile for
+// every player, on any day. Called whenever the active board changes.
+function buildPuzzle(dateKey) {
+	activeKey = dateKey;
+	random = makeRandom(dateKey);
+	const picked = pickWords(WORD_COUNT, random);
+	words = picked.words;
+	solutions = picked.solutions;
+	difficulty = picked.difficulty;
+	solutionsAcceptableWords = countAcceptableSolutions(words);
+	obscureCount = solutionsAcceptableWords - solutions;
+}
+
+buildPuzzle(activeKey);
 
 // Expose the solution finder for debugging from the browser console. Defaults to
 // today's pile; pass a custom word list, a cap, and/or the acceptable dictionary
@@ -64,8 +87,9 @@ function createLetters(chars) {
 }
 
 function newGame() {
-	// Seed from today's date so the puzzle is identical for every player today,
-	// yet effectively random from one day to the next.
+	// The pile is seeded from activeKey (today's date, or a past date in practice
+	// mode), so it's identical for every player on that day, yet effectively random
+	// from one day to the next.
 
 	letters = createLetters(scrambleLetters(words, random));
 	selectedIds = [];
@@ -75,19 +99,36 @@ function newGame() {
 	undosUsed = 0;
 	lost = false;
 
-	// Restore today's in-progress (or finished) board, if any.
-	restoreGame(key);
+	// Restore the in-progress (or finished) daily board, if any. Practice boards
+	// are ephemeral, so they always start fresh.
+	if (!practiceMode) restoreGame(activeKey);
 
 	setMessage("");
 	render();
+	updatePuzzleLabel();
 
-	recordPlay(key);
-	startTimer(key);
+	// Practice boards never touch the daily streak / win % / games-played stats.
+	reconcileStreak();
+	if (!practiceMode) recordPlay(activeKey);
+	startTimer(activeKey);
 	renderStats();
 
-	// Already finished today: re-show the relevant end screen on reopen.
+	// Already finished this board: re-show the relevant end screen on reopen.
 	if (foundWords.length === WORD_COUNT) showWinScreen();
 	else if (lost) showLoseScreen();
+}
+
+// Load and start the board for `dateKey`. Today's date runs the real daily
+// puzzle (persisted, counts toward stats); any other date is practice. Switching
+// boards reloads the saved daily timer so practice never overwrites it.
+function startBoard(dateKey, practice) {
+	practiceMode = practice;
+	timer = practice ? null : loadJSON(TIMER_KEY, null);
+	closeWinScreen();
+	closeLoseScreen();
+	closeSolutions();
+	buildPuzzle(dateKey);
+	newGame();
 }
 
 function render() {
@@ -101,6 +142,12 @@ function render() {
 	updateStatus();
 
 	if (refocusId !== null) focusLetter(refocusId);
+
+	const divider = document.getElementById("divider");
+
+	if (puzzleLabel) puzzleLabel.textContent = `${formatBoardDate(activeKey)}`;
+	if (puzzleLabel && difficultyLabel) divider.textContent = "•";
+	if (difficultyLabel) difficultyLabel.textContent = `Difficulty: ${difficulty.toFixed(2)}/100`;
 
 	saveGame();
 }
@@ -321,7 +368,7 @@ function returnWord(id) {
 	if (undosLeft === 0) {
 		setMessage("No undos left—one more ends the game", "bad");
 	} else {
-		setMessage(`Letters returned · ${undosLeft} undo${undosLeft === 1 ? "" : "s"} left`);
+		setMessage(`Letters returned: ${undosLeft} undo${undosLeft === 1 ? "" : "s"} left`);
 	}
 	render();
 }
@@ -383,6 +430,13 @@ window.addEventListener("keydown", (event) => {
 		event.target instanceof HTMLTextAreaElement ||
 		event.target instanceof HTMLSelectElement
 	) {
+		return;
+	}
+
+	// The past-boards picker can open over any screen, so it owns the keyboard
+	// while shown: Escape closes it, and stray letters never reach the board.
+	if (archiveModal?.classList.contains("show")) {
+		if (event.key === "Escape") closeArchive();
 		return;
 	}
 
@@ -472,6 +526,93 @@ function maybeShowTutorialOnLoad() {
 	if (!seen) openTutorial();
 }
 
+// --- Past boards (archive) modal --------------------------------------------
+
+const archiveModal = document.getElementById("archive-modal");
+const archiveButton = document.getElementById("archive");
+const archiveClose = document.getElementById("archive-close");
+const archiveDate = document.getElementById("archive-date");
+const archivePlay = document.getElementById("archive-play");
+const archiveReturn = document.getElementById("archive-return");
+const archiveError = document.getElementById("archive-error");
+
+// Human-friendly label for a YYYY-MM-DD key, e.g. "Jun 15, 2026".
+function formatBoardDate(dateKey) {
+	const [y, m, d] = dateKey.split("-").map(Number);
+	return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+		year: "numeric",
+		month: "short",
+		day: "numeric",
+	});
+}
+
+function setArchiveError(text) {
+	if (archiveError) archiveError.textContent = text;
+}
+
+function openArchive() {
+	if (!archiveModal) return;
+	const today = dailyKey();
+	if (archiveDate) {
+		archiveDate.max = today;
+		archiveDate.value = activeKey;
+	}
+	// Offer a way back only while a practice board is in play.
+	if (archiveReturn) archiveReturn.hidden = !practiceMode;
+	setArchiveError("");
+	archiveModal.classList.add("show");
+	archiveModal.setAttribute("aria-hidden", "false");
+	archiveDate?.focus();
+}
+
+function closeArchive() {
+	if (!archiveModal) return;
+	archiveModal.classList.remove("show");
+	archiveModal.setAttribute("aria-hidden", "true");
+}
+
+function playArchivedBoard() {
+	const value = archiveDate?.value;
+	if (!value) {
+		setArchiveError("Pick a date first.");
+		return;
+	}
+	const today = dailyKey();
+	if (value > today) {
+		setArchiveError("That board hasn't been made yet—pick today or earlier.");
+		return;
+	}
+	closeArchive();
+	// Selecting today returns to the real, persisted daily puzzle.
+	switchBoardWithLoading(value, value !== today);
+}
+
+function returnToToday() {
+	closeArchive();
+	switchBoardWithLoading(dailyKey(), false);
+}
+
+// Swap boards the way a fresh page load looks: empty the play area so the
+// "Loading board..." state (CSS :empty) paints for a frame, then build the new
+// puzzle on the following frame.
+function switchBoardWithLoading(dateKey, practice) {
+	grid.innerHTML = "";
+	rack.innerHTML = "";
+	foundList.innerHTML = "";
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => startBoard(dateKey, practice));
+	});
+}
+
+archiveButton?.addEventListener("click", openArchive);
+archiveClose?.addEventListener("click", closeArchive);
+archivePlay?.addEventListener("click", playArchivedBoard);
+archiveReturn?.addEventListener("click", returnToToday);
+archiveModal?.addEventListener("click", (event) => {
+	// Click on the dimmed backdrop (not the card) dismisses.
+	if (event.target === archiveModal) closeArchive();
+});
+
 // --- Timer, stats & win screen ----------------------------------------------
 
 const STATS_KEY = "wordpile:stats";
@@ -486,6 +627,7 @@ const loseTimeEl = document.getElementById("lose-time");
 
 const winScreen = document.getElementById("winscreen");
 const winClose = document.getElementById("win-close");
+const winSub = document.getElementById("win-sub");
 const winShare = document.getElementById("win-share");
 const winTimeEl = document.getElementById("win-time");
 const winStreakEl = document.getElementById("win-streak");
@@ -534,8 +676,11 @@ function saveJSON(key, value) {
 // regenerated deterministically from the date, so we only need to store which
 // words were found and what's currently selected.
 function saveGame() {
+	// Practice (past-date) boards are ephemeral and must not clobber today's saved
+	// progress.
+	if (practiceMode) return;
 	saveJSON(GAME_KEY, {
-		key: dailyKey(),
+		key: activeKey,
 		foundWords,
 		nextWordId,
 		selectedIds,
@@ -622,7 +767,8 @@ function startTimer(key) {
 	stopTimer();
 	if (!timer || timer.key !== key) {
 		timer = { key, startTime: Date.now(), wonElapsedMs: null };
-		saveJSON(TIMER_KEY, timer);
+		// Practice boards run a clock but never persist it over today's timer.
+		if (!practiceMode) saveJSON(TIMER_KEY, timer);
 	}
 	tickTimer();
 	if (timer.wonElapsedMs == null) {
@@ -637,6 +783,17 @@ function winPct() {
 function renderStats() {
 	statStreak.textContent = String(stats.currentStreak);
 	statWinPct.textContent = `${winPct()}%`;
+}
+
+// A daily streak only survives if your most recent win was today or yesterday.
+// Once it's older the streak is already broken, so collapse it to 0 right away
+// instead of showing a stale count until your next win.
+function reconcileStreak() {
+	if (stats.currentStreak === 0) return;
+	const today = dailyKey();
+	if (stats.lastWonKey === today || stats.lastWonKey === previousKey(today)) return;
+	stats.currentStreak = 0;
+	saveJSON(STATS_KEY, stats);
 }
 
 // Count one played game the first time today's puzzle is opened.
@@ -658,17 +815,16 @@ function recordWin(key) {
 }
 
 function onWin() {
-	const key = dailyKey();
-
 	// Freeze the clock at the winning time (persist so reloads stay frozen).
 	if (timer && timer.wonElapsedMs == null) {
 		timer.wonElapsedMs = Date.now() - timer.startTime;
-		saveJSON(TIMER_KEY, timer);
+		if (!practiceMode) saveJSON(TIMER_KEY, timer);
 	}
 	stopTimer();
 	statTime.textContent = formatTime(elapsedMs());
 
-	recordWin(key);
+	// Practice (past-date) wins are just for fun—they don't record toward stats.
+	if (!practiceMode) recordWin(activeKey);
 	renderStats();
 	showWinScreen();
 }
@@ -679,12 +835,12 @@ function onLose() {
 	// Freeze the clock at the moment of the loss (persist so reloads stay frozen).
 	if (timer && timer.wonElapsedMs == null) {
 		timer.wonElapsedMs = Date.now() - timer.startTime;
-		saveJSON(TIMER_KEY, timer);
+		if (!practiceMode) saveJSON(TIMER_KEY, timer);
 	}
 	stopTimer();
 	statTime.textContent = formatTime(elapsedMs());
 
-	// render() also persists the now-lost board via saveGame().
+	// render() also persists the now-lost board via saveGame() (skipped in practice).
 	render();
 	showLoseScreen();
 }
@@ -704,8 +860,6 @@ function formatCountdown(ms) {
 	const s = String(total % 60).padStart(2, "0");
 	return `${h}:${m}:${s}`;
 }
-
-const obscureCount = solutionsAcceptableWords - solutions;
 
 // The win/lose footer: the solution counts are clickable links that open the
 // full lists, plus a live countdown to the next pile. Rendered once per screen
@@ -893,6 +1047,15 @@ function showWinScreen() {
 	winBestEl.textContent = String(stats.maxStreak);
 	winPctEl.textContent = `${winPct()}%`;
 
+	// In practice, the stats shown are today's (unchanged): say so, and hide the
+	// share button so a practice run isn't shared as if it were today's result.
+	if (winSub) {
+		winSub.textContent = practiceMode
+			? `${formatBoardDate(activeKey)}'s pile cleared.`
+			: "You've cleared the entire pile!";
+	}
+	if (winShare) winShare.hidden = practiceMode;
+
 	renderEndFooter(true);
 	tickCountdown(true);
 	clearInterval(countdownInterval);
@@ -900,7 +1063,7 @@ function showWinScreen() {
 
 	winScreen.classList.add("show");
 	winScreen.setAttribute("aria-hidden", "false");
-	winShare?.focus();
+	(practiceMode ? winClose : winShare)?.focus();
 }
 
 function closeWinScreen() {
@@ -974,5 +1137,5 @@ loseScreen?.addEventListener("click", (event) => {
 	if (event.target === loseScreen) closeLoseScreen();
 });
 
-newGame();
+startBoard(dailyKey(), false);
 maybeShowTutorialOnLoad();

@@ -2,12 +2,18 @@
 // Relies on core parsing utilities from parse.js but avoids evaluation logic.
 import { PREFIX_NAMES } from "./units.js";
 import {
-	cleanExpression,
-	tokenize,
-	parseExpression,
+	analyzeExpression,
+	collectUnitTerms,
+	mergeUnitTerms,
 	scanUnitToken,
 	getUnitDefinition,
 } from "./parse.js";
+
+// Display entry points accept either raw input or an analysis that a caller has
+// already run, so nothing re-parses the same text twice or reaches a different
+// verdict about it than the grading path did.
+const toAnalysis = (input) =>
+	typeof input === "string" || input == null ? analyzeExpression(input) : input;
 
 const pluralizeUnitName = (name, unitDef) => {
 	// Unit metadata wins over generic English rules for irregular or invariant
@@ -22,51 +28,57 @@ const pluralizeUnitName = (name, unitDef) => {
 
 const singularizeUnitName = (name) => name;
 
-export function toLatexUnits(expression) {
-	const parts = cleanExpression(expression).split("/");
-	const formatPart = (part) => {
-		const normalizedPart = part.replace(/[()]/g, "");
-		// Scan unit tokens rather than splitting on letters so multi-character
-		// symbols like arcsec, mol, and prefixed units remain intact.
-		let out = "";
-		let cursor = 0;
-		while (cursor < normalizedPart.length) {
-			const ch = normalizedPart[cursor];
-			if (ch === "*") {
-				out += "\\,";
-				cursor++;
-				continue;
-			}
-			const token = scanUnitToken(normalizedPart, cursor);
-			if (!token) {
-				out += normalizedPart.slice(cursor).replace(/\*/g, "\\,");
-				break;
-			}
-			const prefixSymbol = token.prefix === "u" ? "µ" : token.prefix;
-			const exponent = token.rawExponent ? `^{${token.rawExponent.slice(1)}}` : "";
-			out += `\\mathrm{${prefixSymbol}${token.base}}${exponent}`;
-			cursor += token.consumed;
-		}
-		return out || normalizedPart;
-	};
+export function toLatexUnits(input) {
+	// Render from the shared term list rather than re-splitting the text on "/".
+	// The old split treated everything after the first slash as denominator, which
+	// disagreed with the left-associative grammar the rest of the app uses.
+	const analyzed = toAnalysis(input);
+	if (!analyzed.ast) return latexFallback(analyzed.cleaned ?? "");
 
-	if (parts.length === 1) return formatPart(parts[0]);
+	const terms = mergeUnitTerms(collectUnitTerms(analyzed.ast));
+	if (!terms.length) return latexFallback(analyzed.cleaned ?? "");
 
-	// Multiple slash groups are rendered as nested fractions, matching the left
-	// associative parse used elsewhere in the app.
-	const [first, ...rest] = parts;
-	let acc = formatPart(first);
-	for (const part of rest) acc = `\\frac{${acc}}{${formatPart(part)}}`;
-	return acc;
+	const render = (term, exponent) =>
+		`\\mathrm{${term.prefix}${term.key}}${exponent === 1 ? "" : `^{${exponent}}`}`;
+	const numerator = terms.filter((t) => t.exponent > 0).map((t) => render(t, t.exponent));
+	const denominator = terms.filter((t) => t.exponent < 0).map((t) => render(t, -t.exponent));
+
+	if (!denominator.length) return numerator.join("\\,");
+	return `\\frac{${numerator.join("\\,") || "1"}}{${denominator.join("\\,")}}`;
 }
 
-export function toPlainUnits(expression, options = {}) {
+function latexFallback(cleaned) {
+	// Partial or unparseable text still needs to render something readable, so
+	// scan whatever unit symbols it does contain.
+	let out = "";
+	let cursor = 0;
+	while (cursor < cleaned.length) {
+		if (cleaned[cursor] === "*") {
+			out += "\\,";
+			cursor++;
+			continue;
+		}
+		const token = scanUnitToken(cleaned, cursor);
+		if (!token) {
+			out += cleaned.slice(cursor).replace(/\*/g, "\\,");
+			break;
+		}
+		const exponent = token.rawExponent ? `^{${token.rawExponent.slice(1)}}` : "";
+		out += `\\mathrm{${token.prefix}${token.base}}${exponent}`;
+		cursor += token.consumed;
+	}
+	return out || cleaned;
+}
+
+export function toPlainUnits(input, options = {}) {
 	const {
 		pluralizeNumerator = false,
 		singularizeDenominator = false,
 		wrapFractions = true,
 		wrapUnitsWith = null,
 	} = options;
+	const analyzed = toAnalysis(input);
+	const cleaned = analyzed.cleaned ?? "";
 	const collapseSpaces = (text) => text.replace(/\s+/g, " ").trim();
 	const wrapBalanced = (s) => {
 		// Parenthesize numerator/denominator groups unless they are already one
@@ -89,7 +101,7 @@ export function toPlainUnits(expression, options = {}) {
 	const formatUnitSymbol = (symbol, isDenominator = false) => {
 		const token = scanUnitToken(symbol, 0);
 		if (!token) return symbol;
-		const prefixSymbol = token.prefix === "u" ? "µ" : token.prefix;
+		const prefixSymbol = token.prefix;
 		const base = token.base;
 		const rawExponent = token.rawExponent;
 		const prefixText = PREFIX_NAMES[prefixSymbol] || prefixSymbol;
@@ -108,8 +120,7 @@ export function toPlainUnits(expression, options = {}) {
 	const formatTokensLoosely = (tokenList = []) => {
 		// Fallback formatter for partial or unsupported expressions. It preserves
 		// user-entered operators while still expanding known unit names.
-		if (!Array.isArray(tokenList) || !tokenList.length)
-			return collapseSpaces(cleanExpression(expression));
+		if (!Array.isArray(tokenList) || !tokenList.length) return collapseSpaces(cleaned);
 		let rebuilt = "";
 		let prevType = null;
 		for (const tok of tokenList) {
@@ -127,13 +138,12 @@ export function toPlainUnits(expression, options = {}) {
 		}
 		return collapseSpaces(rebuilt);
 	};
-	const cleaned = cleanExpression(expression);
-	const tokens = tokenize(cleaned);
+	// Evaluation failures (a "+" between units, say) still leave a usable AST, so
+	// only a missing parse forces the loose token rendering.
 	const fallbackPerFormat = () =>
-		!tokens || tokens.error ? collapseSpaces(cleaned) : formatTokensLoosely(tokens.tokens);
-	if (!tokens || tokens.error) return fallbackPerFormat();
-	const parsed = parseExpression(tokens);
-	if (parsed.error || !parsed.ast) return fallbackPerFormat();
+		analyzed.tokens ? formatTokensLoosely(analyzed.tokens) : collapseSpaces(cleaned);
+	if (!analyzed.ast) return fallbackPerFormat();
+	const parsed = { ast: analyzed.ast };
 
 	const wrap = wrapBalanced;
 	const unwrapGroup = (node) => {
@@ -229,12 +239,11 @@ export function toPlainUnits(expression, options = {}) {
 	return rendered || fallbackPerFormat();
 }
 
-export function toTooltipText(expression) {
-	const cleaned = cleanExpression(expression);
-	const tokens = tokenize(cleaned);
-	if (!tokens || tokens.error) return cleaned;
-	const parsed = parseExpression(tokens);
-	if (parsed.error || !parsed.ast) return cleaned;
+export function toTooltipText(input) {
+	const analyzed = toAnalysis(input);
+	const cleaned = analyzed.cleaned ?? "";
+	if (!analyzed.ast) return cleaned;
+	const parsed = { ast: analyzed.ast };
 
 	const unwrap = (node) => {
 		let n = node;
@@ -270,8 +279,7 @@ export function toTooltipText(expression) {
 			case "unit": {
 				const token = scanUnitToken(n.symbol, 0);
 				if (!token) return;
-				const prefixSymbol = token.prefix === "u" ? "µ" : token.prefix;
-				const prefixName = PREFIX_NAMES[prefixSymbol] || prefixSymbol;
+				const prefixName = PREFIX_NAMES[token.prefix] || token.prefix;
 				const unitDef = getUnitDefinition(token.base);
 				const baseName = unitDef?.name || token.base;
 				const name = inDenom ? baseName : pluralizeUnitName(baseName, unitDef);

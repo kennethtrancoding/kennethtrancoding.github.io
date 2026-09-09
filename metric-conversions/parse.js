@@ -108,8 +108,11 @@ function expandFractions(expr) {
 				out += `\\frac{${numer}`;
 				continue;
 			}
-			const wrappedNumer = wrapArg(numer);
-			const wrappedDenom = wrapArg(denom);
+			// Brace contents are lifted out verbatim, so expand them too. Without this
+			// a \frac nested inside another \frac is never rewritten and survives into
+			// the tokenizer as the literal text "frac".
+			const wrappedNumer = wrapArg(expandFractions(numer));
+			const wrappedDenom = wrapArg(expandFractions(denom));
 			const bothEmpty = wrappedNumer === "()" && wrappedDenom === "()";
 			const numerEmpty = wrappedNumer === "()";
 			const denomEmpty = wrappedDenom === "()";
@@ -124,16 +127,51 @@ function expandFractions(expr) {
 	return out;
 }
 
+const SUPERSCRIPT_DIGITS = {
+	"⁰": "0",
+	"¹": "1",
+	"²": "2",
+	"³": "3",
+	"⁴": "4",
+	"⁵": "5",
+	"⁶": "6",
+	"⁷": "7",
+	"⁸": "8",
+	"⁹": "9",
+	"⁻": "-",
+};
+
+const normalizeSymbols = (expression) =>
+	String(expression ?? "")
+		// MathQuill writes the micro sign as \mu. Stripping the backslash later would
+		// leave "mu", which the tokenizer then reads as milli + u (dalton) rather than
+		// micro, so a typed "µm" would silently become a mass unit.
+		.replace(/\\mu(?![A-Za-z])/g, "µ")
+		.replace(/μ/g, "µ")
+		// This grammar spells ohm out, so accept the symbol and macro users reach for
+		// instead of failing on the leftover text "Omega".
+		.replace(/\\Omega(?![A-Za-z])|\\omega(?![A-Za-z])|[ΩΩ]/g, "ohm")
+		.replace(/×/g, "*")
+		.replace(/÷/g, "/")
+		.replace(/[−–—]/g, "-")
+		// A typed superscript such as m² means the same as m^2.
+		.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+/g, (run) =>
+			`^${[...run].map((ch) => SUPERSCRIPT_DIGITS[ch]).join("")}`,
+		);
+
 export function cleanExpression(expression) {
 	// Convert MathQuill/LaTeX-ish input into the compact grammar consumed by the
 	// tokenizer: plain operators, parenthesis groups, and ^integer exponents.
-	const fractionNormalized = expandFractions(expression);
+	const fractionNormalized = expandFractions(normalizeSymbols(expression));
 	const output = normalizeMicro(fractionNormalized.trim())
 		.replace(/\\+left|\\+right/g, "")
 		.replace(/\\+times/g, "*")
 		.replace(/\\+cdot/g, "*")
 		.replace(/\u00b7/g, "*")
-		.replace(/\\+,/g, "")
+		// A LaTeX thin space separates adjacent unit symbols, so it means
+		// multiplication. Dropping it would silently glue the symbols together and
+		// reinterpret them as one prefixed unit ("m\,s" becoming "ms", millisecond).
+		.replace(/\\+,/g, "*")
 		.replace(/\\+ /g, "*")
 		.replace(/\*+/g, "*")
 		.replace(/\s+/g, "")
@@ -141,7 +179,12 @@ export function cleanExpression(expression) {
 		.replace(/\^\{(-?\d+)\}/g, "^$1")
 		.replace(/{/g, "(")
 		.replace(/}/g, ")")
-		.replace(/\\/g, "");
+		.replace(/\\/g, "")
+		// Spacing macros are cosmetic, so a stray one at an edge or next to another
+		// operator must not turn a partially-typed expression into a syntax error.
+		.replace(/^\*+|\*+$/g, "")
+		.replace(/\*+([/)])/g, "$1")
+		.replace(/([(/])\*+/g, "$1");
 	return output;
 }
 
@@ -156,7 +199,6 @@ const prefixPattern = PREFIXES.filter(Boolean)
 	.sort((a, b) => b.length - a.length)
 	.join("|");
 const unitPattern = `(${prefixPattern}|)(${ALL_UNIT_SYMBOLS.join("|")})(\\^-?\\d+)?`;
-const unitRegex = () => new RegExp(unitPattern, "g");
 const exponentRegex = /^\^-?\d+/;
 
 const matchUnitAt = (text, startIndex) => {
@@ -197,91 +239,154 @@ export const scanUnitToken = (text, startIndex) => {
 	return { ...unitMatch, rawExponent, consumed };
 };
 
-export function parseUnits(expression) {
-	// Normalize a unit expression (prefixes, exponents, numerator/denominator) into
-	// a canonical form and compute its dimension + scale factor.
-	const sanitized = cleanExpression(expression);
-	if (!sanitized) return { error: "Units required." };
-
-	let factor = 1;
-	const dimension = {};
-	const normalizedParts = [];
-	const parts = sanitized.split("/");
-	let hasOffsetUnit = false;
-	let offsetToBase = 0;
-	const baseUnitsUsed = new Set();
-
-	for (const [index, part] of parts.entries()) {
-		const sign = index ? -1 : 1;
-		const segments = part
-			.split("*")
-			.map((s) => s.replace(/[()]/g, ""))
-			.filter(Boolean);
-		if (!segments.length) return { error: "Invalid unit syntax." };
-
-		const normalizedSegments = [];
-		for (const segment of segments) {
-			let cursor = 0;
-			while (cursor < segment.length) {
-				const token = scanUnitToken(segment, cursor);
-				if (!token || token.consumed === 0)
-					return { error: `Invalid unit syntax near "${segment.slice(cursor)}"` };
-
-				const { prefix: prefixSymbol, base, rawExponent } = token;
-				const resolvedKey = resolveUnitKey(base);
-				const unit = NAMED_UNITS[resolvedKey];
-				if (!unit) return { error: `Unrecognized base unit: ${base}` };
-				if (!(prefixSymbol in PREFIX_MULTIPLIERS))
-					return { error: `Unrecognized prefix: ${prefixSymbol}` };
-				if (prefixSymbol && unit.allowPrefix === false)
-					return { error: `Prefix not allowed for ${base}` };
-
-				const exponent = (rawExponent ? parseInt(rawExponent.slice(1), 10) : 1) * sign;
-
-				if (unit.offset) {
-					// Offset units need affine conversion, so they are only valid as a
-					// single standalone unit like degC, not inside compound expressions.
-					if (parts.length > 1 || segments.length > 1 || exponent !== 1 || sign === -1)
-						return {
-							error: "Offset units like Celsius cannot be combined, divided, or exponentiated.",
-						};
-					if (hasOffsetUnit && resolvedKey !== "degC")
-						return {
-							error: "Only one offset unit can be used in an expression.",
-						};
-					hasOffsetUnit = true;
-					offsetToBase = unit.offset;
-				}
-				const prefixMultiplier = PREFIX_MULTIPLIERS[prefixSymbol];
-				const normalizedPrefix =
-					unit.allowPrefix === false && prefixSymbol ? "" : prefixSymbol;
-
-				// factor converts from this expression into the app's base dimensions.
-				factor *= Math.pow(unit.factor * prefixMultiplier, exponent);
-				baseUnitsUsed.add(resolvedKey);
-
-				// Dimensions are exponent vectors; multiplication adds exponents and
-				// division subtracts them via the signed exponent above.
-				for (const [dimensionKey, value] of Object.entries(unit.dim)) {
-					dimension[dimensionKey] = (dimension[dimensionKey] || 0) + value * exponent;
-					if (!dimension[dimensionKey]) delete dimension[dimensionKey];
-				}
-				normalizedSegments.push(`${normalizedPrefix}${resolvedKey}${rawExponent || ""}`);
-				cursor += token.consumed;
-			}
-		}
-		const combined = normalizedSegments.join("*");
-		normalizedParts.push(index ? `/${combined}` : combined);
-	}
-	return {
-		factor,
-		dim: dimension,
-		normalized: normalizedParts.join(""),
-		hasOffset: hasOffsetUnit,
-		offset: offsetToBase,
-		bases: [...baseUnitsUsed],
+// Question generation runs the same short unit strings through these pure
+// string -> result functions thousands of times per question, so routing every
+// check through one pipeline also gives one place worth memoizing. Every caller
+// treats the results as read-only.
+const CACHE_LIMIT = 2000;
+const memoizeByString = (compute) => {
+	const cache = new Map();
+	return (input) => {
+		if (typeof input !== "string") return compute(input);
+		if (cache.has(input)) return cache.get(input);
+		const result = compute(input);
+		if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value);
+		cache.set(input, result);
+		return result;
 	};
+};
+
+// The single syntax pipeline. Every check in the app - live preview, answer
+// grading, target-unit validation, question generation and display text - runs
+// input through this one function, so they cannot drift apart or disagree about
+// whether something is valid. Stages are cumulative and the result carries
+// whatever was reached before a failure, which lets display code fall back to
+// tokens when the full parse did not succeed.
+export const analyzeExpression = memoizeByString((expression) => computeAnalysis(expression));
+
+function computeAnalysis(expression) {
+	try {
+		const cleaned = cleanExpression(expression);
+		if (!cleaned) return { cleaned: "", stage: "empty", error: "Enter a value and units." };
+
+		const tokenized = tokenize(cleaned);
+		if (tokenized.error) return { cleaned, stage: "tokenize", error: tokenized.error };
+		const { tokens } = tokenized;
+
+		const parsed = parseExpression(tokenized);
+		if (parsed.error) return { cleaned, tokens, stage: "parse", error: parsed.error };
+		const { ast } = parsed;
+
+		const evaluated = evaluateAst(ast);
+		if (evaluated.error)
+			return { cleaned, tokens, ast, stage: "evaluate", error: evaluated.error };
+
+		return { cleaned, tokens, ast, value: evaluated.value, unit: evaluated.unit };
+	} catch (e) {
+		console.error("Failed to analyze expression:", e);
+		return { cleaned: "", stage: "exception", error: "Could not read that expression." };
+	}
 }
+
+const literalExponent = (node) => {
+	// Exponents must be plain integers, so unwrap grouping and unary signs rather
+	// than evaluating arbitrary sub-expressions.
+	let current = node;
+	while (current?.type === "group") current = current.value;
+	if (current?.type === "number") return current.value;
+	if (current?.type === "unary") {
+		const inner = literalExponent(current.value);
+		if (inner === null) return null;
+		return current.op === "-" ? -inner : inner;
+	}
+	return null;
+};
+
+// Flatten an AST into its unit terms, each carrying a net exponent that already
+// accounts for nesting, division and powers. This is the one place that decides
+// what "the units of this expression" are, so canonical naming, dimension
+// overlap checks and hint lookups all reach the same answer.
+export function collectUnitTerms(node, exponent = 1, out = []) {
+	if (!node) return out;
+	switch (node.type) {
+		case "group":
+		case "unary":
+			return collectUnitTerms(node.value, exponent, out);
+		case "binary":
+			if (node.op === "*" || node.op === "/") {
+				collectUnitTerms(node.left, exponent, out);
+				collectUnitTerms(node.right, node.op === "/" ? -exponent : exponent, out);
+			}
+			return out;
+		case "power": {
+			const power = literalExponent(node.exponent);
+			return power === null ? out : collectUnitTerms(node.base, exponent * power, out);
+		}
+		case "unit": {
+			const token = scanUnitToken(node.symbol, 0);
+			if (!token) return out;
+			const own = token.rawExponent ? parseInt(token.rawExponent.slice(1), 10) : 1;
+			out.push({
+				key: resolveUnitKey(token.base),
+				prefix: token.prefix,
+				exponent: own * exponent,
+			});
+			return out;
+		}
+		default:
+			return out;
+	}
+}
+
+// Merge repeated symbols and keep first-appearance order, which display code
+// wants. Terms that cancel out entirely are dropped.
+export function mergeUnitTerms(terms) {
+	const merged = new Map();
+	for (const term of terms) {
+		const symbol = `${term.prefix}${term.key}`;
+		const existing = merged.get(symbol);
+		if (existing) existing.exponent += term.exponent;
+		else merged.set(symbol, { ...term, symbol });
+	}
+	return [...merged.values()].filter((term) => term.exponent !== 0);
+}
+
+// Canonical text for a unit expression: alias-resolved, exponents merged, and
+// sorted so the same unit written two ways ("m*s" and "s*m") yields one string.
+// Question generation compares these to guarantee source and target really differ.
+function canonicalUnitName(terms) {
+	return mergeUnitTerms(terms)
+		.map((term) => ({ symbol: term.symbol, exponent: term.exponent }))
+		.sort((a, b) => (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0))
+		.map(({ symbol, exponent }) => (exponent === 1 ? symbol : `${symbol}^${exponent}`))
+		.join("*");
+}
+
+export const parseUnits = memoizeByString((expression) => {
+	// A unit expression is just an expression whose numeric part is exactly 1 and
+	// whose units are non-empty. Expressing it that way lets it share the grammar
+	// used for answers instead of applying a second, subtly different one. The
+	// previous hand-rolled splitter treated everything after the first "/" as a
+	// denominator, so it read "kg/m*s" as kg/(m*s) while the answer parser read the
+	// same text as (kg/m)*s.
+	const analyzed = analyzeExpression(expression);
+	if (analyzed.error) return { error: analyzed.error };
+
+	const { value, unit, ast } = analyzed;
+	if (!Object.keys(unit.dim).length) return { error: "Units are required (e.g., m, kg, s)." };
+	if (!Number.isFinite(value) || Math.abs(value - 1) > 1e-12)
+		return { error: "A unit on its own cannot include a numeric factor." };
+
+	const terms = collectUnitTerms(ast);
+	return {
+		factor: unit.factor,
+		dim: { ...unit.dim },
+		normalized: canonicalUnitName(terms),
+		hasOffset: unit.hasOffset,
+		offset: unit.offset,
+		bases: [...new Set(terms.map((term) => term.key))],
+	};
+});
 export function convertValue(value, fromUnit, toUnitExpression) {
 	const fromParsed = typeof fromUnit === "string" ? parseUnits(fromUnit) : fromUnit;
 	if (!fromParsed || fromParsed.error)
@@ -342,7 +447,9 @@ export function tokenize(expression) {
 			continue;
 		}
 
-		return { error: `Unexpected token near "${input.slice(index, index + 8)}"` };
+		return {
+			error: `I don't recognize "${input.slice(index, index + 8)}" as a unit or operator.`,
+		};
 	}
 
 	return { tokens };
@@ -350,11 +457,11 @@ export function tokenize(expression) {
 
 export function parseExpression(inputTokens) {
 	// Recursive-descent parser that accepts numbers, units, *, /, ^ and unary +/-.
-	if (!inputTokens) return { error: "No tokens provided" };
+	if (!inputTokens) return { error: "Enter a value and units." };
 	if (inputTokens.error) return { error: inputTokens.error };
 	const tokens = Array.isArray(inputTokens) ? inputTokens : inputTokens.tokens;
-	if (!Array.isArray(tokens)) return { error: "Tokens must be an array" };
-	if (!tokens.length) return { error: "Unexpected end of input" };
+	if (!Array.isArray(tokens)) return { error: "Enter a value and units." };
+	if (!tokens.length) return { error: "Enter a value and units." };
 
 	const state = { tokens, pos: 0 };
 
@@ -364,7 +471,8 @@ export function parseExpression(inputTokens) {
 	const expect = (type, value) => {
 		const tok = read();
 		if (!tok || tok.type !== type || (value && tok.value !== value)) {
-			state.error = `Expected ${value || type} at position ${state.pos}`;
+			state.error =
+				value === ")" ? "Missing a closing parenthesis." : `Expected ${value || type} here.`;
 			return null;
 		}
 		return consume();
@@ -373,7 +481,7 @@ export function parseExpression(inputTokens) {
 	const parsePrimary = () => {
 		const tok = read();
 		if (!tok) {
-			state.error = "Unexpected end of input";
+			state.error = "The expression stops early - finish the last term.";
 			return null;
 		}
 
@@ -404,7 +512,7 @@ export function parseExpression(inputTokens) {
 			return { type: "group", value: inner };
 		}
 
-		state.error = `Unexpected token ${tok.value} at position ${state.pos}`;
+		state.error = `"${tok.value}" is not valid here.`;
 		return null;
 	};
 
@@ -460,7 +568,7 @@ export function parseExpression(inputTokens) {
 	const ast = parseAddSub();
 	if (state.error) return { error: state.error };
 	if (state.pos !== state.tokens.length) {
-		return { error: `Unexpected token ${read().value} at position ${state.pos}` };
+		return { error: `"${read().value}" is not valid here.` };
 	}
 	return { ast };
 }
@@ -584,43 +692,26 @@ function sameUnitDefinition(a, b) {
 
 export function parseAnswer(rawInput, targetUnit) {
 	// Validate the player's MathQuill response, enforcing that the final units match
-	// the requested target and that the expression is dimensionally legal.
-	const normalizedInput = rawInput.replace(/\s+/g, " ").trim();
-	if (!normalizedInput) return { error: "Please enter a value and units." };
+	// the requested target and that the expression is dimensionally legal. Syntax
+	// itself is settled by the shared pipeline, so a response the live preview
+	// accepted can never be rejected here for a different reason.
+	const analyzed = analyzeExpression(rawInput);
+	if (analyzed.error) return { error: analyzed.error };
 
-	try {
-		const cleaned = cleanExpression(normalizedInput);
-		const tokens = tokenize(cleaned);
-		if (tokens.error) return { error: tokens.error };
-		const parsed = parseExpression(tokens);
-		if (parsed.error) return { error: parsed.error };
-		const evaluated = evaluateAst(parsed.ast);
-		if (evaluated.error) return { error: evaluated.error };
+	const { value, unit } = analyzed;
+	if (!Number.isFinite(value)) return { error: "Invalid numeric expression." };
+	if (!Object.keys(unit.dim).length) return { error: "Units are required (e.g., m, kg, s)." };
 
-		if (!Number.isFinite(evaluated.value)) return { error: "Invalid numeric expression." };
-		if (!Object.keys(evaluated.unit.dim).length)
-			return { error: "Units are required (e.g., m, kg, s)." };
+	const target = parseUnits(targetUnit);
+	if (target.error) return { error: target.error };
 
-		const target = parseUnits(targetUnit);
-		if (target.error) return { error: target.error };
+	if (!dimensionsEqual(unit.dim, target.dim))
+		return { error: `Dimension mismatch. Expected units for ${targetUnit}` };
 
-		if (!dimensionsEqual(evaluated.unit.dim, target.dim)) {
-			return {
-				error: `Dimension mismatch. Expected units for ${targetUnit}`,
-			};
-		}
+	if (!sameUnitDefinition(unit, target))
+		return { error: `Answer must use the requested unit: ${targetUnit}` };
 
-		if (!sameUnitDefinition(evaluated.unit, target)) {
-			return {
-				error: `Answer must use the requested unit: ${targetUnit}`,
-			};
-		}
-
-		return { value: evaluated.value, unitObj: evaluated.unit };
-	} catch (e) {
-		console.error("Failed to parse answer:", e);
-		return { error: "Could not parse expression. Check your syntax." };
-	}
+	return { value, unitObj: unit };
 }
 
 function cloneDim(dim) {
@@ -669,11 +760,6 @@ function divUnit(u1, u2) {
 	};
 }
 
-function isUnitSymbol(symbol) {
-	const r = new RegExp(`^${unitPattern}$`);
-	return r.test(symbol);
-}
-
 function unitFromSymbol(symbol) {
 	// Convert one token such as "km^2" into the unit object shape used by AST
 	// evaluation: scale factor, dimension vector, and optional offset metadata.
@@ -706,111 +792,6 @@ function unitFromSymbol(symbol) {
 	};
 }
 
-function separateValueAndUnitObj(node) {
-	if (node.isSymbolNode && isUnitSymbol(node.name)) {
-		const parsed = unitFromSymbol(node.name);
-		if (parsed.error) return { error: parsed.error };
-		return { valueNode: new math.ConstantNode(1), unit: parsed.unit };
-	}
-
-	if (node.isConstantNode) {
-		return {
-			valueNode: node,
-			unit: { factor: 1, dim: {}, hasOffset: false, offset: 0 },
-		};
-	}
-
-	if (node.isParenthesisNode) {
-		const inner = separateValueAndUnitObj(node.content);
-		if (inner.error) return inner;
-		return {
-			valueNode: new math.ParenthesisNode(inner.valueNode),
-			unit: inner.unit,
-		};
-	}
-
-	if (node.isOperatorNode) {
-		const left = separateValueAndUnitObj(node.args[0]);
-		if (left.error) return left;
-
-		const right = node.args[1] ? separateValueAndUnitObj(node.args[1]) : null;
-		if (right && right.error) return right;
-
-		if ((node.op === "+" || node.op === "-") && node.args.length === 1) {
-			const newValueNode = new math.OperatorNode(node.op, node.fn, [left.valueNode]);
-			return { valueNode: newValueNode, unit: left.unit };
-		}
-
-		if (node.op === "*" || node.op === "/") {
-			const leftOffset = left.unit.hasOffset;
-			const rightOffset = right && right.unit.hasOffset;
-
-			if (node.op === "*") {
-				if (leftOffset || rightOffset) {
-					if (leftOffset && rightOffset)
-						return { error: "Offset units cannot be multiplied together." };
-					const offsetSide = leftOffset ? left : right;
-					const otherSide = leftOffset ? right : left;
-					if (Object.keys(otherSide.unit.dim).length || otherSide.unit.hasOffset)
-						return {
-							error: "Offset units can only be scaled by pure numbers.",
-						};
-					const newValueNode = new math.OperatorNode(node.op, node.fn, [
-						left.valueNode,
-						right.valueNode,
-					]);
-					return { valueNode: newValueNode, unit: offsetSide.unit };
-				}
-			}
-
-			if (node.op === "/") {
-				if (rightOffset) return { error: "Offset units cannot be in the denominator." };
-				if (leftOffset) {
-					if (Object.keys(right.unit.dim).length)
-						return {
-							error: "Offset units can only be divided by pure numbers.",
-						};
-					const newValueNode = new math.OperatorNode(node.op, node.fn, [
-						left.valueNode,
-						right.valueNode,
-					]);
-					return { valueNode: newValueNode, unit: left.unit };
-				}
-			}
-			const newValueNode = new math.OperatorNode(node.op, node.fn, [
-				left.valueNode,
-				right.valueNode,
-			]);
-			const newUnit =
-				node.op === "*" ? mulUnit(left.unit, right.unit) : divUnit(left.unit, right.unit);
-			return { valueNode: newValueNode, unit: newUnit };
-		}
-
-		if (node.op === "^") {
-			if (left.unit.hasOffset)
-				return { error: "Offset units like Celsius cannot be exponentiated." };
-			if (right.unit && Object.keys(right.unit.dim).length) {
-				return { error: "Units are not allowed in exponents." };
-			}
-
-			const expVal = right.valueNode.compile().evaluate();
-			if (!Number.isFinite(expVal)) return { error: "Invalid exponent." };
-			if (!Number.isInteger(expVal))
-				return { error: "Exponent must be an integer for units." };
-
-			const newValueNode = new math.OperatorNode(node.op, node.fn, [
-				left.valueNode,
-				right.valueNode,
-			]);
-			return { valueNode: newValueNode, unit: powUnit(left.unit, expVal) };
-		}
-
-		return { error: "Addition and subtraction are not allowed in this answer." };
-	}
-
-	return { valueNode: node, unit: { factor: 1, dim: {} } };
-}
-
 export const UNIT_TOKENS = ALL_UNIT_SYMBOLS.flatMap((baseUnit) => {
 	const def = getUnitDefinition(baseUnit);
 	const prefixedUnits =
@@ -820,33 +801,23 @@ export const UNIT_TOKENS = ALL_UNIT_SYMBOLS.flatMap((baseUnit) => {
 	return [baseUnit, ...prefixedUnits];
 });
 
-export function hasDimOverlapAcrossSides(expression) {
+export const hasDimOverlapAcrossSides = memoizeByString((expression) => {
 	// Generated questions avoid reducible forms where the same dimension appears
 	// in numerator and denominator, even if the full expression is still valid.
-	const sanitized = cleanExpression(expression);
+	// Sides come from each term's net exponent, so this agrees with how the rest
+	// of the app reads the expression.
+	const { ast } = analyzeExpression(expression);
+	if (!ast) return false;
+
 	const numeratorDims = new Set();
 	const denominatorDims = new Set();
-
-	const parts = sanitized.split("/");
-	for (const [index, part] of parts.entries()) {
-		const target = index === 0 ? numeratorDims : denominatorDims;
-		const segments = part
-			.split("*")
-			.map((s) => s.replace(/[()]/g, ""))
-			.filter(Boolean);
-
-		for (const segment of segments) {
-			const regex = unitRegex();
-			let match;
-			while ((match = regex.exec(segment)) !== null) {
-				const [, , base] = match;
-				const unit = NAMED_UNITS[resolveUnitKey(base)];
-				if (!unit) continue;
-				Object.keys(unit.dim).forEach((dimKey) => target.add(dimKey));
-			}
-		}
+	for (const term of collectUnitTerms(ast)) {
+		const unit = NAMED_UNITS[term.key];
+		if (!unit || term.exponent === 0) continue;
+		const target = term.exponent < 0 ? denominatorDims : numeratorDims;
+		for (const dimKey of Object.keys(unit.dim)) target.add(dimKey);
 	}
 
 	for (const dim of numeratorDims) if (denominatorDims.has(dim)) return true;
 	return false;
-}
+});

@@ -21,15 +21,30 @@
 					<p>
 						Create five 5-letter words!
 						<span class="puzzle-label" id="puzzle-label"></span>
+						<span class="puzzle-label" id="divider"></span>
+						<span class="puzzle-label" id="difficulty-label"></span>
 					</p>
-					<button
-						class="help-btn"
-						id="help"
-						type="button"
-						aria-label="How to play"
-						title="How to play">
-						?
-					</button>
+					<div class="header-actions">
+						<button
+							class="help-btn"
+							id="archive"
+							type="button"
+							aria-label="Past piles"
+							title="Past piles">
+							<img
+								src="./assets/calendar_month_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"
+								style="width: 80%"
+								alt="Past piles" />
+						</button>
+						<button
+							class="help-btn"
+							id="help"
+							type="button"
+							aria-label="How to play"
+							title="How to play">
+							?
+						</button>
+					</div>
 				</span>
 				<div class="statbar" id="statbar" aria-label="Game stats">
 					<div class="stat">
@@ -106,7 +121,7 @@
 					×
 				</button>
 				<h2 class="modal-title" id="win-title">Pile Cleared</h2>
-				<p class="modal-sub">You've cleared the entire pile!</p>
+				<p class="modal-sub" id="win-sub">You've cleared the entire pile!</p>
 				<div class="win-stats">
 					<div class="win-stat">
 						<span class="win-stat-value" id="win-time">0:00</span>
@@ -181,6 +196,35 @@
 				<p class="modal-sub" id="solutions-sub"></p>
 				<ul class="solution-list" id="solutions-list"></ul>
 				<nav class="solution-pager" id="solutions-pager" aria-label="Solution pages"></nav>
+			</div>
+		</div>
+
+		<div
+			class="modal"
+			id="archive-modal"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="archive-title"
+			aria-hidden="true">
+			<div class="modal-card">
+				<button class="modal-close" id="archive-close" type="button" aria-label="Close">
+					×
+				</button>
+				<h2 class="modal-title" id="archive-title">Past piles</h2>
+				<p class="modal-sub">Pick any past date to play that day's pile.</p>
+				<div class="archive-controls">
+					<label class="archive-field" for="archive-date">
+						<span>Choose a date</span>
+						<input type="date" id="archive-date" />
+					</label>
+					<button class="btn primary archive-play" id="archive-play" type="button">
+						Play this pile
+					</button>
+				</div>
+				<p class="archive-error" id="archive-error" role="alert"></p>
+				<button class="btn archive-today" id="archive-return" type="button" hidden>
+					Back to today's pile
+				</button>
 			</div>
 		</div>
 
