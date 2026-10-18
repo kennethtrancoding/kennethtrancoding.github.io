@@ -35,9 +35,9 @@ let practiceMode = false;
 let random;
 let words;
 let solutions;
-let solutionsAcceptableWords;
-let obscureCount;
 let difficulty;
+// Memoised { count, capped } for the active board — see obscureSolutions().
+let obscure;
 
 // (Re)generate the deterministic puzzle for `dateKey`. Same date → same pile for
 // every player, on any day. Called whenever the active board changes.
@@ -48,8 +48,22 @@ function buildPuzzle(dateKey) {
 	words = picked.words;
 	solutions = picked.solutions;
 	difficulty = picked.difficulty;
-	solutionsAcceptableWords = countAcceptableSolutions(words);
-	obscureCount = solutionsAcceptableWords - solutions;
+	// Obscure solutions are deliberately *not* counted here — see obscureSolutions().
+	obscure = null;
+}
+
+// How many obscure solutions the pile has: splits drawn from the full acceptable
+// dictionary, minus the curated common ones. Counting them is by far the most
+// expensive thing the game does (seconds, against milliseconds for building the
+// board itself) and the result only ever appears on the end screen, so it is
+// computed on first use and memoised rather than built with the board.
+// buildPuzzle() clears the memo whenever the active board changes.
+function obscureSolutions() {
+	if (!obscure) {
+		const { solutions: acceptable, capped } = countAcceptableSolutions(words);
+		obscure = { count: Math.max(0, acceptable - solutions), capped };
+	}
+	return obscure;
 }
 
 buildPuzzle(activeKey);
@@ -104,8 +118,8 @@ function newGame() {
 	if (!practiceMode) restoreGame(activeKey);
 
 	setMessage("");
+	// render() also refreshes the date / difficulty labels in the header.
 	render();
-	updatePuzzleLabel();
 
 	// Practice boards never touch the daily streak / win % / games-played stats.
 	reconcileStreak();
@@ -868,8 +882,11 @@ function renderEndFooter(win) {
 	const el = win ? winTimeUntilNew : loseTimeUntilNew;
 	if (!el) return;
 
+	// First call for this board pays for the count; it is memoised from here on.
+	const { count: obscureCount, capped } = obscureSolutions();
+	const exact = obscureCount === 1 && !capped;
 	const commonLabel = `${solutions} common ${solutions === 1 ? "solution" : "solutions"}`;
-	const obscureLabel = `${obscureCount} obscurer ${obscureCount === 1 ? "one" : "ones"}`;
+	const obscureLabel = `${obscureCount}${capped ? "+" : ""} obscurer ${exact ? "one" : "ones"}`;
 	const commonLink = `<button type="button" class="link-btn" data-solutions="common">${commonLabel}</button>`;
 	// Nothing to show when there are no obscure solutions, so leave it as plain text.
 	const obscureLink = obscureCount
@@ -910,13 +927,14 @@ function openSolutions(kind) {
 		};
 	} else {
 		// Obscure = acceptable solutions minus the curated common ones. The total is
-		// already known cheaply (obscureCount), so we don't enumerate up front — the
-		// list is built lazily, only as many as the visible page needs.
+		// a bounded count (obscureSolutions(), memoised and possibly capped), so we
+		// don't enumerate up front — the list is built lazily, only as many as the
+		// visible page needs.
 		const commonKeys = new Set(common.map(solutionKey));
 		solutionsTitle.textContent = "Obscure solutions";
 		solutionsView = {
 			page: 0,
-			total: obscureCount,
+			total: obscureSolutions().count,
 			cache: [],
 			// Enumerate just enough acceptable solutions to yield `count` obscure ones
 			// (allowing for the few common sets we filter back out).

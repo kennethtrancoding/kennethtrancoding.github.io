@@ -167,16 +167,32 @@ export const countSolutions = (pool, slots, limit, budget, useAcceptableWords = 
 	return { solutions, exhausted };
 };
 
-// Counts how many distinct ways the pile (from `words`) can be solved using the
-// full acceptable-word dictionary. Returns a plain number.
-export function countAcceptableSolutions(words) {
+// Bounds for the acceptable-dictionary counter below. Both are deliberately
+// small. Counting against the full dictionary is effectively unbounded work — a
+// pile of common letters has hundreds of thousands of splits — and the number is
+// only ever shown as a flavour stat on the end screen, so a fast approximate
+// answer beats an exact one that freezes the tab. At roughly 25µs per search
+// node these hold the count to about a quarter-second on the worst piles.
+const OBSCURE_SOLUTION_LIMIT = 1000;
+const OBSCURE_SOLVE_BUDGET = 10000;
+
+// Counts the distinct ways the pile (from `words`) can be solved using the full
+// acceptable-word dictionary, stopping early once it has counted enough.
+// Returns { solutions, capped }, where `capped` means the real total is higher
+// than `solutions` — either the solution limit or the node budget ran out — so
+// callers should render it as "1000+" rather than as an exact figure.
+export function countAcceptableSolutions(
+	words,
+	limit = OBSCURE_SOLUTION_LIMIT,
+	budget = OBSCURE_SOLVE_BUDGET,
+) {
 	const pool = new Int8Array(26);
 	for (const word of words) {
 		const w = word.toLowerCase();
 		for (let i = 0; i < w.length; i++) pool[w.charCodeAt(i) - A]++;
 	}
-	const { solutions } = countSolutions(pool, words.length, Infinity, SOLVE_BUDGET, true);
-	return solutions;
+	const { solutions, exhausted } = countSolutions(pool, words.length, limit, budget, true);
+	return { solutions, capped: exhausted || solutions >= limit };
 }
 
 // --- Daily puzzle generation ------------------------------------------------
