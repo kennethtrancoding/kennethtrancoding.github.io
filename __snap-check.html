@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Pointer snap check</title>
+		<style>
+			body {
+				background-color: rgb(18, 18, 18);
+				color: antiquewhite;
+				font-family: Arial, Helvetica, sans-serif;
+				margin: 0;
+				padding: 24px;
+			}
+			h1 {
+				font-size: 1.4rem;
+				margin: 0 0 6px;
+			}
+			p.hint {
+				margin: 0 0 20px;
+				opacity: 0.7;
+				font-size: 0.95rem;
+				max-width: 60ch;
+			}
+			.row {
+				display: flex;
+				align-items: baseline;
+				gap: 16px;
+				padding: 10px 0;
+				border-top: 1px solid rgba(250, 235, 215, 0.15);
+			}
+			.tag {
+				flex: 0 0 190px;
+				font-size: 0.8rem;
+				opacity: 0.65;
+				font-family: ui-monospace, Menlo, monospace;
+			}
+			a {
+				color: antiquewhite;
+				text-decoration: none;
+				font-size: 2rem;
+			}
+
+			/* --- one variable per row ------------------------------------- */
+
+			/* A: nothing at all. If this does not snap, the cause is global. */
+
+			/* B: the single suspect — a no-op transform, which still promotes
+			   the element to its own layer. */
+			.t-transform {
+				transform: scale(1);
+			}
+
+			/* C: the page's display model, without any transform. */
+			.t-block {
+				display: inline-block;
+				width: fit-content;
+			}
+
+			/* D: the shipping .link rule as it now stands. */
+			.t-link {
+				width: fit-content;
+				cursor: pointer;
+				font-size: 2rem;
+				text-decoration: none;
+				margin: 0;
+				display: inline-block;
+			}
+
+			/* E: the old shipping rule, transform included. */
+			.t-link-old {
+				width: fit-content;
+				cursor: pointer;
+				font-size: 2rem;
+				text-decoration: none;
+				margin: 0;
+				display: inline-block;
+				transform: scale(1);
+				transition: transform 0.35s ease-in-out;
+			}
+
+			/* The real page's overlay, reproduced exactly. */
+			#ink-layer {
+				position: fixed;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				pointer-events: none;
+				touch-action: none;
+				z-index: 9999;
+			}
+			body.no-overlay #ink-layer {
+				display: none;
+			}
+			body.touch-none {
+				touch-action: none;
+			}
+
+			.toggles {
+				margin: 24px 0 0;
+				display: flex;
+				gap: 12px;
+				flex-wrap: wrap;
+				border-top: 1px solid rgba(250, 235, 215, 0.15);
+				padding-top: 18px;
+			}
+			button {
+				font: inherit;
+				font-size: 0.95rem;
+				background: rgba(250, 235, 215, 0.1);
+				color: antiquewhite;
+				border: 1px solid rgba(250, 235, 215, 0.35);
+				border-radius: 8px;
+				padding: 8px 14px;
+			}
+			.state {
+				font-family: ui-monospace, Menlo, monospace;
+				font-size: 0.85rem;
+				opacity: 0.7;
+				margin-top: 12px;
+			}
+		</style>
+	</head>
+	<body class="touch-none">
+		<h1>Pointer snap check</h1>
+		<p class="hint">
+			Drive the cursor over each link with the Universal Control trackpad and note which ones
+			the pointer catches on. Row A is the control: if even that one does not snap, the cause
+			is global (overlay, touch-action, or Safari itself) rather than anything about the link
+			styling. Compare B against A, and E against D.
+		</p>
+
+		<div class="row"><span class="tag">A — bare a, no CSS</span><a href="#a">Snap target A</a></div>
+		<div class="row">
+			<span class="tag">B — + transform:scale(1)</span
+			><a class="t-transform" href="#b">Snap target B</a>
+		</div>
+		<div class="row">
+			<span class="tag">C — + inline-block</span><a class="t-block" href="#c">Snap target C</a>
+		</div>
+		<div class="row">
+			<span class="tag">D — .link (current)</span><a class="t-link" href="#d">Snap target D</a>
+		</div>
+		<div class="row">
+			<span class="tag">E — .link (old, w/ transform)</span
+			><a class="t-link-old" href="#e">Snap target E</a>
+		</div>
+		<div class="row">
+			<span class="tag">F — a button</span><button type="button">Snap target F</button>
+		</div>
+
+		<div class="toggles">
+			<button type="button" id="toggle-overlay">Toggle ink overlay</button>
+			<button type="button" id="toggle-touch">Toggle body touch-action</button>
+		</div>
+		<div class="state" id="state"></div>
+
+		<canvas id="ink-layer" aria-hidden="true"></canvas>
+
+		<script>
+			const state = document.getElementById("state");
+			const showState = () => {
+				const overlay = document.body.classList.contains("no-overlay") ? "off" : "on";
+				const touch = document.body.classList.contains("touch-none") ? "none" : "auto";
+				state.textContent = `ink overlay: ${overlay}   body touch-action: ${touch}`;
+			};
+
+			document.getElementById("toggle-overlay").addEventListener("click", () => {
+				document.body.classList.toggle("no-overlay");
+				showState();
+			});
+			document.getElementById("toggle-touch").addEventListener("click", () => {
+				document.body.classList.toggle("touch-none");
+				showState();
+			});
+
+			showState();
+		</script>
+	</body>
+</html>

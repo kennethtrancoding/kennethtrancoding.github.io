@@ -1,0 +1,310 @@
+body {
+	background-color: #121212;
+	min-height: 100svh;
+	/* Keep finger scrolling and zooming available. The ink script cancels
+	   stylus touch events separately. */
+	touch-action: auto;
+}
+.underline {
+	width: fit-content;
+	height: fit-content;
+	position: relative;
+}
+/* The snap wash. Absolutely positioned with negative insets so it
+			   reads as padding around the link without occupying any layout, and
+			   left unpositioned in z-order so the relatively-positioned .link
+			   below paints over it. snap-cursor.js owns .is-snapped. */
+.underline::before {
+	content: "";
+	position: absolute;
+	inset: -6px -14px;
+	border-radius: 12px;
+	background: rgba(250, 235, 215, 0.12);
+	opacity: 0;
+	transition: opacity 0.2s ease;
+	cursor: none;
+	pointer-events: none;
+}
+.underline.is-snapped::before {
+	opacity: 1;
+}
+#title {
+	font-size: 120px;
+	line-height: normal;
+	line-height: 50%;
+}
+/* Title hover, original flavour: the letters actually grow, which
+			   reflows the line and the h1's height on every hover — that is the
+			   page jitter. This is the fallback; .static-title below replaces it. */
+.title-letter {
+	display: inline-block;
+	--s: 1;
+	transition:
+		font-size 0.15s ease,
+		line-height 0.15s ease,
+		transform 0.15s ease,
+		text-shadow 0.15s ease;
+	transform-origin: bottom center;
+}
+.title-letter.is-main {
+	font-size: clamp(150px, 20vw, 400px);
+	line-height: 0.1ex;
+	text-shadow: 0 0 22px rgba(255, 255, 255, 0.9);
+}
+.title-letter.is-neighbor {
+	font-size: clamp(120px, 16vw, 350px);
+	line-height: 0.1ex;
+	text-shadow: 0 0 14px rgba(255, 255, 255, 0.65);
+}
+
+/* Static hover. The .static-title class is set on <html> by title-hover.js
+			   when the STATIC_TITLE_HOVER feature flag is on: the letters scale
+			   instead of resizing, so nothing reflows, and --x is the sideways
+			   nudge applyLetterShifts() hands each letter to stand in for the
+			   advance width the bigger letters before it would have added. */
+.static-title .title-letter {
+	transform: translateX(var(--x, 0px)) scale(var(--s));
+	/* Vertically centred, so a magnified letter grows evenly above and
+				   below the line and stays centred on its smaller neighbours
+				   instead of sitting on the baseline. */
+	transform-origin: left center;
+}
+.static-title .title-letter.is-main,
+.static-title .title-letter.is-neighbor {
+	font-size: inherit;
+	line-height: inherit;
+}
+.static-title .title-letter.is-main {
+	--s: 2;
+}
+.static-title .title-letter.is-neighbor {
+	--s: 1.6;
+}
+.link-group,
+.links {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+#title,
+.link {
+	font-family: Arial, Helvetica, sans-serif;
+	color: antiquewhite;
+}
+.link {
+	width: fit-content;
+	cursor: pointer;
+	font-size: 2.5rem;
+	text-decoration: none;
+	margin: 0;
+	display: inline-block;
+	/* Positioned so the link text paints over the .underline::before
+				   snap wash. No transform here on purpose: only .tilt .link
+				   transforms and it brings its own, and the flat click animation
+				   runs on font-size. */
+	position: relative;
+}
+.underline::after {
+	content: "";
+	display: block;
+	height: 3px;
+	width: 100%;
+	background: antiquewhite;
+	transform: scaleX(0);
+	transform-origin: left;
+	transition: transform 0.35s ease-in-out;
+}
+.underline.is-hovered::after,
+.underline.is-snapped::after {
+	transform: scaleX(1);
+}
+.link.is-active {
+	animation-name: click-scale-down;
+	animation-fill-mode: forwards;
+	animation-duration: 0.05s;
+	animation-timing-function: ease-in;
+}
+.link.is-post-click {
+	animation-name: post-click-burst;
+	animation-duration: 0.2s;
+	animation-timing-function: cubic-bezier(0.75, 0.05, 0.51, 1.71);
+}
+.link:focus-visible {
+	outline: 3px solid antiquewhite;
+	outline-offset: 4px;
+}
+
+/* Tilt mode. The .tilt class is set on <html> by project-links.js when the
+			   TILT feature flag is on; without it the flat scale animation above
+			   is what runs. */
+.tilt .link {
+	will-change: transform;
+	transform: perspective(700px) rotateX(0deg) rotateY(0deg) translateZ(0px);
+	transition: transform 0.35s ease-out;
+}
+.tilt .link.is-active {
+	animation: none;
+	transition: transform 0.1s ease-out;
+}
+.tilt .link.is-post-click {
+	animation: none;
+	transition: transform 0.5s cubic-bezier(0.18, 1.5, 0.45, 1);
+}
+
+/* The two things a pencil line can run into. Stylus touch cancellation
+				   handles panning, but WebKit judges these separately and
+			   part-way through a drag: a pen crossing text becomes a selection, a
+			   pen crossing a link becomes a link drag, and either one is taken by
+			   cancelling the pointer — which reads as the line stopping dead the
+			   moment it reaches the title or a project link. With nothing here
+			   selectable or draggable there is no gesture to switch to.
+
+			   Declared statically rather than toggled on for the length of a
+			   stroke: changing user-select on the element under a live gesture is
+			   itself enough for WebKit to drop the pointer, which leaves nothing
+			   but dots. The title is decorative spans (the h1 carries an
+			   aria-label), and un-selectable link text is the ordinary treatment.
+
+			   .link * is in the list because -webkit-user-drag does not inherit and
+			   two of the links wrap their text in a <strong>, which would otherwise
+			   still be draggable on its own. */
+#title,
+.title-letter,
+.link,
+.link * {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-user-drag: none;
+	-webkit-touch-callout: none;
+}
+
+/* Apple Pencil ink overlay. Sits above everything, never takes
+			   pointer input itself — pencil-ink.js paints pencil strokes here
+			   instead of letting them touch the page. */
+#ink-layer {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	touch-action: none;
+	z-index: 9999;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.link,
+	.underline::after,
+	.underline::before,
+	.title-letter {
+		transition: none !important;
+	}
+	.tilt .link {
+		transform: none !important;
+	}
+	.link.is-active,
+	.link.is-post-click {
+		animation: none !important;
+	}
+}
+@keyframes click-scale-down {
+	0% {
+		font-size: 2.5rem;
+	}
+	100% {
+		font-size: 2.2rem;
+	}
+}
+@keyframes post-click-burst {
+	0% {
+		font-size: 2.2rem;
+	}
+	100% {
+		font-size: 2.5rem;
+	}
+}
+
+/* Mobile: the name runs vertically down the left edge, one letter per
+			   line, with the project links beside it. Letters grow with transform
+			   instead of font-size here so the stack does not reflow on touch. */
+/* Phones: narrow screens, plus short ones so landscape gets the
+			   vertical treatment instead of a wrapped 120px headline. */
+@media (max-width: 700px), (max-height: 520px) {
+	body {
+		display: flex;
+		align-items: center;
+		padding: 18px 14px;
+		box-sizing: border-box;
+	}
+	.link-group {
+		flex-direction: row;
+		align-items: center;
+		gap: 18px;
+		width: 100%;
+	}
+	.links {
+		flex: 1 1 auto;
+		min-width: 0;
+		gap: 18px;
+	}
+	.underline {
+		max-width: 100%;
+	}
+	#title {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		flex: 0 0 auto;
+		margin: 0;
+		/* 17 stacked letters, so the svh term keeps the column from
+					   running off the bottom in landscape. */
+		font-size: clamp(0.85rem, min(7vw, 4.4svh), 2.25rem);
+		line-height: 1.02;
+	}
+	/* The column is vertical here, so the letters scale in place under
+				   either flag and ignore the horizontal --x offset. Each rule is
+				   repeated for .static-title so it outranks the desktop static
+				   rules above, which are one class more specific. */
+	.title-letter,
+	.static-title .title-letter {
+		display: block;
+		transform: scale(var(--s));
+		transform-origin: center center;
+	}
+	.title-letter.is-main,
+	.title-letter.is-neighbor,
+	.static-title .title-letter.is-main,
+	.static-title .title-letter.is-neighbor {
+		font-size: inherit;
+		line-height: inherit;
+	}
+	.title-letter.is-main,
+	.static-title .title-letter.is-main {
+		--s: 1.75;
+		text-shadow: 0 0 12px rgba(255, 255, 255, 0.9);
+	}
+	.title-letter.is-neighbor,
+	.static-title .title-letter.is-neighbor {
+		--s: 1.35;
+		text-shadow: 0 0 8px rgba(255, 255, 255, 0.65);
+	}
+	.link {
+		font-size: clamp(0.9rem, 4vw, 1.15rem);
+		/* Keeps the tap target at least 44px tall (WCAG 2.5.5) even
+					   though the text itself is much smaller. */
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
+	}
+	/* The desktop click animation keyframes hard-code 2.5rem, so swap
+				   in a scale-based press for the smaller mobile type. */
+	.link.is-active {
+		animation: none;
+		transform: scale(0.94);
+		transition: transform 0.05s ease-in;
+	}
+	.link.is-post-click {
+		animation: none;
+		transform: scale(1);
+		transition: transform 0.2s cubic-bezier(0.75, 0.05, 0.51, 1.71);
+	}
+}
